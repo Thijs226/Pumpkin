@@ -398,7 +398,6 @@ impl ItemStack {
                 applied += 1;
             }
         }
-
         if applied <= 0 {
             return DamageResult::Untouched;
         }
@@ -797,8 +796,7 @@ impl ItemStack {
                         if blocks.contains(&block) {
                             return correct;
                         }
-                    }
-                }
+                    }                }
             }
         }
         false
@@ -881,6 +879,17 @@ mod tests {
     /// Helper: creates a fresh Iron Sword (max_damage 250, damage 0).
     fn iron_sword() -> ItemStack {
         ItemStack::new(1, &Item::IRON_SWORD)
+    }
+
+    #[test]
+    fn damaged_damageable_item_is_not_stackable() {
+        let mut stack = iron_sword();
+        stack.set_data_component(MaxStackSizeImpl { size: 64 });
+
+        assert!(stack.is_stackable());
+
+        stack.set_damage(1);
+        assert!(!stack.is_stackable());
     }
 
     #[test]
@@ -1197,8 +1206,7 @@ mod tests {
                 stack.damage_item(amount),
                 DamageResult::Broken,
                 "expected item to break for amount={amount}"
-            );
-            assert!(
+            );            assert!(
                 stack.is_empty(),
                 "item should be destroyed for amount={amount}"
             );
