@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - fix/itemstack-damaged-stackability
   pull_request:
   workflow_dispatch:
     inputs:
