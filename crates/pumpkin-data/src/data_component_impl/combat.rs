@@ -1016,40 +1016,84 @@ impl SwingAnimationImpl {
     };
 
     pub fn read_data(data: &NbtTag) -> Option<Self> {
-        match data {
-            NbtTag::Compound(compound) => {
-                let animation_type = compound
-                    .get("type")
-                    .and_then(|tag| match tag {
-                        NbtTag::String(name) => SwingAnimationType::from_name(name),
-                        NbtTag::Int(id) => SwingAnimationType::from_id(*id),
-                        NbtTag::Byte(id) => SwingAnimationType::from_id(*id as i32),
-                        _ => None,
-                    })
-                    .unwrap_or(Self::DEFAULT.animation_type);
-                let duration = compound
-                    .get("duration")
-                    .and_then(|tag| tag.extract_int())
-                    .unwrap_or(Self::DEFAULT.duration);
-                Some(Self {
-                    animation_type,
-                    duration,
-                })
-            }
-            _ => Some(Self::DEFAULT),
-        }
+        let (animation_type, duration) = read_swing_animation_data(data);
+        Some(Self {
+            animation_type,
+            duration,
+        })
     }
 }
 
 impl DataComponentImpl for SwingAnimationImpl {
     fn write_data(&self) -> NbtTag {
-        let mut compound = NbtCompound::new();
-        compound.put_string("type", self.animation_type.to_name().to_string());
-        compound.put_int("duration", self.duration);
-        NbtTag::Compound(compound)
+        write_swing_animation_data(self.animation_type, self.duration)
     }
 
     default_impl!(AttackAnimation);
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub struct InteractAnimationImpl {
+    pub animation_type: SwingAnimationType,
+    pub duration: i32,
+}
+
+impl Default for InteractAnimationImpl {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+impl InteractAnimationImpl {
+    pub const DEFAULT: Self = Self {
+        animation_type: SwingAnimationType::Whack,
+        duration: 6,
+    };
+
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        let (animation_type, duration) = read_swing_animation_data(data);
+        Some(Self {
+            animation_type,
+            duration,
+        })
+    }
+}
+
+impl DataComponentImpl for InteractAnimationImpl {
+    fn write_data(&self) -> NbtTag {
+        write_swing_animation_data(self.animation_type, self.duration)
+    }
+
+    default_impl!(InteractAnimation);
+}
+
+fn read_swing_animation_data(data: &NbtTag) -> (SwingAnimationType, i32) {
+    match data {
+        NbtTag::Compound(compound) => {
+            let animation_type = compound
+                .get("type")
+                .and_then(|tag| match tag {
+                    NbtTag::String(name) => SwingAnimationType::from_name(name),
+                    NbtTag::Int(id) => SwingAnimationType::from_id(*id),
+                    NbtTag::Byte(id) => SwingAnimationType::from_id(*id as i32),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            let duration = compound
+                .get("duration")
+                .and_then(|tag| tag.extract_int())
+                .unwrap_or(6);
+            (animation_type, duration)
+        }
+        _ => (SwingAnimationType::default(), 6),
+    }
+}
+
+fn write_swing_animation_data(animation_type: SwingAnimationType, duration: i32) -> NbtTag {
+    let mut compound = NbtCompound::new();
+    compound.put_string("type", animation_type.to_name().to_string());
+    compound.put_int("duration", duration);
+    NbtTag::Compound(compound)
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]

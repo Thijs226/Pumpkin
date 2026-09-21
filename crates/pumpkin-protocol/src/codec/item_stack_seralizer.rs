@@ -854,3 +854,26 @@ impl From<Option<ItemStack>> for ItemStackOptionalTemplateSerializer<'_> {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pumpkin_data::data_component_impl::{InteractAnimationImpl, SwingAnimationType};
+
+    #[test]
+    fn read_interact_animation_component() {
+        let mut cursor = Cursor::new(vec![1, 0, 1, 0, 41, 1, 19]);
+        let stack = ItemStackSerializer::read(&mut cursor)
+            .unwrap()
+            .0
+            .into_owned();
+
+        assert_eq!(
+            stack.get_data_component::<InteractAnimationImpl>().copied(),
+            Some(InteractAnimationImpl {
+                animation_type: SwingAnimationType::Stab,
+                duration: 19,
+            })
+        );
+    }
+}

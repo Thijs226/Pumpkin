@@ -901,21 +901,49 @@ impl DataComponentCodec<Self> for RepairableImpl {
 
 impl DataComponentCodec<Self> for SwingAnimationImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
-        seq.write_var_int(&VarInt::from(self.animation_type.to_id()))?;
-        seq.write_var_int(&VarInt::from(self.duration))
+        serialize_swing_animation(self.animation_type, self.duration, seq)
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let type_id = seq.get_var_int()?.0;
-        let animation_type = SwingAnimationType::from_id(type_id).ok_or_else(|| {
-            ReadingError::Message(format!("Invalid SwingAnimationType id {type_id}"))
-        })?;
-        let duration = seq.get_var_int()?.0;
+        let (animation_type, duration) = deserialize_swing_animation(seq)?;
         Ok(Self {
             animation_type,
             duration,
         })
     }
+}
+
+impl DataComponentCodec<Self> for InteractAnimationImpl {
+    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
+        serialize_swing_animation(self.animation_type, self.duration, seq)
+    }
+
+    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
+        let (animation_type, duration) = deserialize_swing_animation(seq)?;
+        Ok(Self {
+            animation_type,
+            duration,
+        })
+    }
+}
+
+fn serialize_swing_animation(
+    animation_type: SwingAnimationType,
+    duration: i32,
+    seq: &mut impl NetworkWriteExt,
+) -> Result<(), WritingError> {
+    seq.write_var_int(&VarInt::from(animation_type.to_id()))?;
+    seq.write_var_int(&VarInt::from(duration))
+}
+
+fn deserialize_swing_animation(
+    seq: &mut impl NetworkReadExt,
+) -> Result<(SwingAnimationType, i32), ReadingError> {
+    let type_id = seq.get_var_int()?.0;
+    let animation_type = SwingAnimationType::from_id(type_id)
+        .ok_or_else(|| ReadingError::Message(format!("Invalid SwingAnimationType id {type_id}")))?;
+    let duration = seq.get_var_int()?.0;
+    Ok((animation_type, duration))
 }
 
 impl DataComponentCodec<Self> for RarityImpl {
@@ -984,6 +1012,7 @@ pub fn deserialize(
         DataComponent::PiercingWeapon => Ok(PiercingWeaponImpl::deserialize(seq)?.to_dyn()),
         DataComponent::KineticWeapon => Ok(KineticWeaponImpl::deserialize(seq)?.to_dyn()),
         DataComponent::AttackAnimation => Ok(SwingAnimationImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::InteractAnimation => Ok(InteractAnimationImpl::deserialize(seq)?.to_dyn()),
         DataComponent::AdditionalTradeCost => {
             Ok(AdditionalTradeCostImpl::deserialize(seq)?.to_dyn())
         }
@@ -1136,6 +1165,7 @@ pub fn serialize(
         DataComponent::PiercingWeapon => get::<PiercingWeaponImpl>(value).serialize(seq),
         DataComponent::KineticWeapon => get::<KineticWeaponImpl>(value).serialize(seq),
         DataComponent::AttackAnimation => get::<SwingAnimationImpl>(value).serialize(seq),
+        DataComponent::InteractAnimation => get::<InteractAnimationImpl>(value).serialize(seq),
         DataComponent::AdditionalTradeCost => get::<AdditionalTradeCostImpl>(value).serialize(seq),
         DataComponent::StoredEnchantments => get::<StoredEnchantmentsImpl>(value).serialize(seq),
         DataComponent::Dye => get::<DyeImpl>(value).serialize(seq),
@@ -2802,5 +2832,26 @@ impl DataComponentCodec<Self> for BreakSoundImpl {
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
         let _ = seq.get_var_int()?;
         Ok(Self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn interact_animation_codec_round_trip() {
+        let expected = InteractAnimationImpl {
+            animation_type: SwingAnimationType::Stab,
+            duration: 19,
+        };
+        let mut encoded = Vec::new();
+
+        serialize(DataComponent::InteractAnimation, &expected, &mut encoded).unwrap();
+
+        let mut cursor = Cursor::new(encoded);
+        let restored = deserialize(DataComponent::InteractAnimation, &mut cursor).unwrap();
+        assert!(expected.equal(restored.as_ref()));
     }
 }

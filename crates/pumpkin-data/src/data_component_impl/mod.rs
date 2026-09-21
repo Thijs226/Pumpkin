@@ -650,6 +650,7 @@ pub fn read_data(id: DataComponent, data: &NbtTag) -> Option<Box<dyn DataCompone
         DataComponent::CanPlaceOn => Some(CanPlaceOnImpl::read_data(data)?.to_dyn()),
         DataComponent::CanBreak => Some(CanBreakImpl::read_data(data)?.to_dyn()),
         DataComponent::AttackAnimation => Some(SwingAnimationImpl::read_data(data)?.to_dyn()),
+        DataComponent::InteractAnimation => Some(InteractAnimationImpl::read_data(data)?.to_dyn()),
         DataComponent::Rarity => Some(RarityImpl::read_data(data)?.to_dyn()),
         DataComponent::BannerPatterns => Some(BannerPatternsImpl::read_data(data)?.to_dyn()),
         DataComponent::UseEffects => Some(UseEffectsImpl::read_data(data)?.to_dyn()),
@@ -944,5 +945,18 @@ mod tests {
             SwingAnimationImpl::read_data,
         );
         assert_round_trip(SwingAnimationImpl::DEFAULT, SwingAnimationImpl::read_data);
+    }
+
+    #[test]
+    fn interact_animation_is_read_from_nbt() {
+        let value = InteractAnimationImpl {
+            animation_type: SwingAnimationType::Stab,
+            duration: 19,
+        };
+
+        assert_round_trip(value, InteractAnimationImpl::read_data);
+        let restored = read_data(DataComponent::InteractAnimation, &value.write_data())
+            .expect("interact_animation should be a supported data component");
+        assert!(value.equal(restored.as_ref()));
     }
 }
