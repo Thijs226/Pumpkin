@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pumpkin_data::entity::EntityType;
+use pumpkin_data::{Enchantment, entity::EntityType, item_stack::ItemStack};
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::GameMode;
 
@@ -15,7 +15,8 @@ impl BlockBehaviour for InfestedBlock {
     fn broken(&self, args: BrokenArgs<'_>) {
         {
             // TODO: ugly fix, use onStacksDropped
-            if args.player.gamemode.load() == GameMode::Creative {
+            let held_item = args.player.inventory().held_item();
+            if !should_spawn_silverfish(args.player.gamemode.load(), &held_item) {
                 return;
             }
             let entity = Entity::new(
@@ -26,5 +27,30 @@ impl BlockBehaviour for InfestedBlock {
 
             args.world.spawn_entity(Arc::new(entity));
         }
+    }
+}
+
+fn should_spawn_silverfish(gamemode: GameMode, held_item: &ItemStack) -> bool {
+    gamemode != GameMode::Creative && held_item.get_enchantment_level(&Enchantment::SILK_TOUCH) == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_spawn_silverfish;
+    use pumpkin_data::{Enchantment, item::Item, item_stack::ItemStack};
+    use pumpkin_util::GameMode;
+
+    #[test]
+    fn silk_touch_prevents_silverfish_spawn() {
+        let plain_tool = ItemStack::new(1, &Item::DIAMOND_PICKAXE);
+        let mut silk_touch_tool = plain_tool.clone();
+        silk_touch_tool.enchant(&Enchantment::SILK_TOUCH, 1);
+
+        assert!(should_spawn_silverfish(GameMode::Survival, &plain_tool));
+        assert!(!should_spawn_silverfish(
+            GameMode::Survival,
+            &silk_touch_tool
+        ));
+        assert!(!should_spawn_silverfish(GameMode::Creative, &plain_tool));
     }
 }
