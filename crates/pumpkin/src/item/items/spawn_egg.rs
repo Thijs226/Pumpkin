@@ -66,7 +66,7 @@ pub(crate) fn apply_entity_variant(item: &ItemStack, mob: &dyn EntityBase) {
 }
 
 impl ItemBehaviour for SpawnEggItem {
-    fn normal_use(&self, item: &Item, player: &Player) {
+    fn normal_use(&self, item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         if let Some(entity_type) = entity_from_egg(item.id) {
             let world = player.world();
             let (start_pos, end_pos) = self.get_start_and_end_pos(player);

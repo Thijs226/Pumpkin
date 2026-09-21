@@ -14,7 +14,7 @@ impl ItemMetadata for ClockItem {
 }
 
 impl ItemBehaviour for ClockItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, _item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         let world = player.world();
         world.play_sound(
             Sound::UiButtonClick,

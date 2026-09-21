@@ -15,7 +15,7 @@ impl ItemMetadata for KnowledgeBookItem {
 }
 
 impl ItemBehaviour for KnowledgeBookItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, _item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         let mut held = player.inventory().held_item();
         let mut matched_main = true;
         if held.is_empty() || held.item.id != Item::KNOWLEDGE_BOOK.id {

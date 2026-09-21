@@ -18,7 +18,7 @@ impl ItemMetadata for MapItem {
 }
 
 impl ItemBehaviour for MapItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, _item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         let Some(server) = player.world().server.upgrade() else {
             return;
         };

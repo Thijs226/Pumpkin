@@ -17,7 +17,7 @@ impl ItemMetadata for CarrotOnAStickItem {
 }
 
 impl ItemBehaviour for CarrotOnAStickItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, _item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         let vehicle_opt = player
             .get_entity()
             .vehicle
@@ -51,7 +51,7 @@ impl ItemMetadata for WarpedFungusOnAStickItem {
 }
 
 impl ItemBehaviour for WarpedFungusOnAStickItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, _item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         let vehicle_opt = player
             .get_entity()
             .vehicle

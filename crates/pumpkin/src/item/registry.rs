@@ -6,6 +6,7 @@ use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_util::Hand;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use rustc_hash::FxHashMap;
@@ -33,10 +34,21 @@ impl ItemRegistry {
 
     pub fn on_use(&self, stack: &ItemStack, player: &Player) {
         let (yaw, pitch) = player.rotation();
-        self.on_use_with_rotation(stack, player, yaw, pitch);
+        self.on_use_with_hand_and_rotation(stack, player, yaw, pitch, Hand::Right);
     }
 
     pub fn on_use_with_rotation(&self, stack: &ItemStack, player: &Player, yaw: f32, pitch: f32) {
+        self.on_use_with_hand_and_rotation(stack, player, yaw, pitch, Hand::Right);
+    }
+
+    pub fn on_use_with_hand_and_rotation(
+        &self,
+        stack: &ItemStack,
+        player: &Player,
+        yaw: f32,
+        pitch: f32,
+        hand: Hand,
+    ) {
         let item = stack.item;
         let cooldown = stack.get_use_cooldown();
         let cooldown_group = cooldown
@@ -49,7 +61,7 @@ impl ItemRegistry {
 
         let pumpkin_item = self.get_pumpkin_item(item.id);
         if let Some(pumpkin_item) = pumpkin_item {
-            pumpkin_item.normal_use_with_rotation(item, player, yaw, pitch);
+            pumpkin_item.normal_use_with_rotation(item, player, yaw, pitch, hand);
         }
 
         if let Some(cooldown) = cooldown {
@@ -159,8 +171,20 @@ impl ItemRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::should_try_block_placement;
+    use super::{ItemBehaviour, should_try_block_placement};
     use crate::block::registry::BlockActionResult;
+    use crate::entity::player::Player;
+    use pumpkin_data::item::Item;
+    use pumpkin_util::Hand;
+
+    #[test]
+    fn item_use_api_carries_the_used_hand() {
+        fn invoke(behaviour: &dyn ItemBehaviour, item: &Item, player: &Player) {
+            behaviour.normal_use_with_rotation(item, player, 0.0, 0.0, Hand::Left);
+        }
+
+        let _ = invoke;
+    }
 
     #[test]
     fn block_placement_only_follows_pass() {

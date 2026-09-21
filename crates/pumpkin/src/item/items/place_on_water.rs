@@ -19,7 +19,7 @@ impl ItemMetadata for PlaceOnWaterBlockItem {
 }
 
 impl ItemBehaviour for PlaceOnWaterBlockItem {
-    fn normal_use(&self, item: &Item, player: &Player) {
+    fn normal_use(&self, item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         let world = player.world();
         let (start_pos, end_pos) = self.get_start_and_end_pos(player);
         let checker = |pos: &BlockPos, world_inner: &Arc<World>| {

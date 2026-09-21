@@ -13,6 +13,7 @@ use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_util::Hand;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 
@@ -21,15 +22,22 @@ pub trait ItemMetadata {
 }
 
 pub trait ItemBehaviour: Send + Sync {
-    fn normal_use(&self, _item: &Item, _player: &Player) {}
+    fn normal_use(&self, _item: &Item, _player: &Player, _hand: Hand) {}
 
     /// Handles an item use with the rotation reported for that action.
     ///
     /// Java clients include this rotation in the use-item packet. Item behaviours
     /// that perform a raycast should override this method instead of relying on
     /// the player's potentially stale entity rotation.
-    fn normal_use_with_rotation(&self, item: &Item, player: &Player, _yaw: f32, _pitch: f32) {
-        self.normal_use(item, player);
+    fn normal_use_with_rotation(
+        &self,
+        item: &Item,
+        player: &Player,
+        _yaw: f32,
+        _pitch: f32,
+        hand: Hand,
+    ) {
+        self.normal_use(item, player, hand);
     }
 
     #[expect(clippy::too_many_arguments)]

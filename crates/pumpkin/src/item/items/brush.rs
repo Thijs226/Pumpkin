@@ -54,7 +54,7 @@ fn get_archaeology_loot(is_sand: bool, location: BlockPos, world: &World) -> Ite
 }
 
 impl ItemBehaviour for BrushItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, _item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         player.world().play_sound(
             Sound::ItemBrushBrushingGeneric,
             SoundCategory::Players,

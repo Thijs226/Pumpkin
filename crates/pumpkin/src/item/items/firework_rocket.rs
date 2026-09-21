@@ -49,7 +49,7 @@ impl ItemBehaviour for FireworkRocketItem {
         BlockActionResult::Success
     }
 
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, _item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         if player.get_entity().is_fall_flying() {
             let world = player.world();
             let entity = Entity::new(

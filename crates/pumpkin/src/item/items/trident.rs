@@ -22,7 +22,7 @@ impl ItemMetadata for TridentItem {
 }
 
 impl ItemBehaviour for TridentItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, _item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         let inventory = player.inventory();
         let stack = inventory.held_item();
 

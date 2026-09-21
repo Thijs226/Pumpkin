@@ -22,7 +22,7 @@ impl ItemMetadata for WindChargeItem {
 const POWER: f32 = 1.5;
 
 impl ItemBehaviour for WindChargeItem {
-    fn normal_use(&self, _block: &Item, player: &Player) {
+    fn normal_use(&self, _block: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         let world = player.world();
         let position = player.position();
 

@@ -14,7 +14,7 @@ impl ItemMetadata for BundleItem {
 }
 
 impl ItemBehaviour for BundleItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, _item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         let mut held_item = player.inventory.held_item();
         let mut matched = false;
         let mut used_slot_index = player.inventory.get_selected_slot() as usize;

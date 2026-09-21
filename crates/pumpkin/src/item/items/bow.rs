@@ -22,7 +22,7 @@ impl ItemMetadata for BowItem {
 }
 
 impl ItemBehaviour for BowItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, _item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         // Check if player has arrows (or is in creative mode)
         let has_arrows = Self::has_arrows(player);
         let gamemode = player.gamemode.load();

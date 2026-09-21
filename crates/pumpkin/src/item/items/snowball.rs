@@ -20,7 +20,7 @@ impl ItemMetadata for SnowBallItem {
 const POWER: f32 = 1.5;
 
 impl ItemBehaviour for SnowBallItem {
-    fn normal_use(&self, _block: &Item, player: &Player) {
+    fn normal_use(&self, _block: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         let position = player.position();
         let world = player.world();
         world.play_sound(

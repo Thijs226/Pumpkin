@@ -14,7 +14,7 @@ impl ItemMetadata for GoatHornItem {
 }
 
 impl ItemBehaviour for GoatHornItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, _item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         player.world().play_sound(
             Sound::ItemGoatHornSound0,
             SoundCategory::Players,

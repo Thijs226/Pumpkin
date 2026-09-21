@@ -16,7 +16,7 @@ impl ItemMetadata for WritableBookItem {
 }
 
 impl ItemBehaviour for WritableBookItem {
-    fn normal_use(&self, _item: &Item, player: &Player) {
+    fn normal_use(&self, _item: &Item, player: &Player, _hand: pumpkin_util::Hand) {
         player.try_send_client_packet(&COpenBook::new(VarInt(0)));
         player.world().play_sound(
             Sound::ItemBookPageTurn,
