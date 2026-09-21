@@ -125,7 +125,6 @@ impl BlockEntity for HopperBlockEntity {
     }
 
     fn set_block_state(&mut self, block_state: BlockStateId) {
-        // TODO !!!IMPORTANT!!! set block state when loading the chunk
         self.facing = HopperLikeProperties::from_state_id(block_state).facing;
     }
 

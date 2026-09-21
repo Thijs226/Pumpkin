@@ -299,6 +299,17 @@ pub struct World {
     pub entity_tracker: entity_tracker::EntityTracker,
 }
 
+fn restore_block_entity_state(
+    entity: &mut Arc<dyn BlockEntity>,
+    block_state: Option<BlockStateId>,
+) {
+    if let Some(block_state) = block_state
+        && let Some(entity) = Arc::get_mut(entity)
+    {
+        entity.set_block_state(block_state);
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum BlockBreakingProgress {
     Start { stage: i32, speed: f32 },
@@ -6296,7 +6307,8 @@ impl World {
             self.custom_block_entity_data
                 .insert(*block_pos, custom_data.clone());
         }
-        let entity = block_entity_from_nbt(&nbt)?;
+        let mut entity = block_entity_from_nbt(&nbt)?;
+        restore_block_entity_state(&mut entity, self.get_block_state_id_if_loaded(block_pos));
         self.block_entities
             .entry(chunk_pos)
             .or_default()
@@ -7572,9 +7584,13 @@ fn merge_entity_records(data: &mut Vec<NbtCompound>, live: bool, fresh: Vec<NbtC
 
 #[cfg(test)]
 mod tests {
+    use crate::block::entities::{block_entity_from_nbt, hopper::HopperBlockEntity};
     use pumpkin_data::{
         Block,
-        block_properties::{ChestLikeProperties, ChestType, HorizontalFacing, WaterLikeProperties},
+        block_properties::{
+            ChestLikeProperties, ChestType, FacingHopper, HopperLikeProperties, HorizontalFacing,
+            WaterLikeProperties,
+        },
         fluid::Fluid,
     };
     use pumpkin_nbt::compound::NbtCompound;
@@ -7583,7 +7599,32 @@ mod tests {
 
     use super::{
         World, bedrock_block_breaking_rate, bedrock_chest_block_actor, merge_entity_records,
+        restore_block_entity_state,
     };
+
+    #[test]
+    fn loaded_hopper_block_entity_restores_its_facing() {
+        let mut nbt = NbtCompound::new();
+        nbt.put_string("id", HopperBlockEntity::ID.to_string());
+        nbt.put_int("x", 0);
+        nbt.put_int("y", 64);
+        nbt.put_int("z", 0);
+
+        let east_state = HopperLikeProperties {
+            facing: FacingHopper::East,
+            enabled: true,
+        }
+        .to_state_id(&Block::HOPPER);
+        let mut entity = block_entity_from_nbt(&nbt).expect("hopper NBT should create an entity");
+
+        restore_block_entity_state(&mut entity, Some(east_state));
+
+        let hopper = entity
+            .as_any()
+            .downcast_ref::<HopperBlockEntity>()
+            .expect("factory should create a hopper");
+        assert_eq!(hopper.facing, FacingHopper::East);
+    }
 
     fn record(uuid: Option<Uuid>, id: &str) -> NbtCompound {
         let mut nbt = NbtCompound::new();
