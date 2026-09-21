@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - master
-      - fix/itemstack-damaged-stackability
   pull_request:
   workflow_dispatch:
     inputs:
@@ -24,18 +23,6 @@ env:
   RUSTFLAGS: "-Dwarnings"
 
 jobs:
-  stackability_regression:
-    name: Item stackability regression
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - run: rustup update stable && rustup default stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: stackability-regression
-      - run: cargo test -p pumpkin-data damaged_damageable_item_is_not_stackable
-
   prepare:
     name: Plan CI
     runs-on: ubuntu-latest
