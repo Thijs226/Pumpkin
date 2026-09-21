@@ -2,7 +2,10 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use crate::entity::projectile::{ProjectileHit, is_projectile};
 use crate::{
-    entity::{Entity, EntityBase, living::LivingEntity, player::Player},
+    entity::{
+        Entity, EntityBase, experience_orb::ExperienceOrbEntity, living::LivingEntity,
+        player::Player,
+    },
     server::Server,
 };
 use pumpkin_data::item_stack::ItemStack;
@@ -70,12 +73,18 @@ impl FishingBobberEntity {
 
             // TODO: Use actual loot tables. For now, just give a raw cod.
             let item_stack = ItemStack::new(1, &Item::COD);
-            // player.inventory().add_item(item_stack).await; // Need public add_item
 
             player.trigger_advancement(
                 crate::entity::player::advancement::trigger::AdvancementTrigger::FishedItem {
                     item_id: format!("minecraft:{}", item_stack.item.registry_key),
                 },
+            );
+
+            player.inventory().offer_or_drop_stack(item_stack, player);
+            ExperienceOrbEntity::spawn(
+                &world,
+                player.position(),
+                fishing_experience_reward(rand::random()),
             );
 
             world.play_sound(
@@ -235,5 +244,22 @@ impl EntityBase for FishingBobberEntity {
 
     fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
         self.process_tick(caller);
+    }
+}
+
+#[must_use]
+const fn fishing_experience_reward(random: u32) -> u32 {
+    random % 6 + 1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fishing_experience_reward_stays_within_vanilla_range() {
+        for random in [0, 1, 5, 6, u32::MAX] {
+            assert!((1..=6).contains(&fishing_experience_reward(random)));
+        }
     }
 }
