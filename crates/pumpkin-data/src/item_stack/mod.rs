@@ -443,7 +443,7 @@ impl ItemStack {
 
     #[must_use]
     pub fn is_stackable(&self) -> bool {
-        self.get_max_stack_size() > 1 // TODO: && (!this.isDamageable() || !this.isDamaged());
+        self.get_max_stack_size() > 1 && (!self.is_damageable() || self.get_damage() == 0)
     }
 
     #[must_use]
