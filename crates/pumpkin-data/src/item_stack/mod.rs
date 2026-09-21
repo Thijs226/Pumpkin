@@ -398,6 +398,7 @@ impl ItemStack {
                 applied += 1;
             }
         }
+
         if applied <= 0 {
             return DamageResult::Untouched;
         }
@@ -796,7 +797,8 @@ impl ItemStack {
                         if blocks.contains(&block) {
                             return correct;
                         }
-                    }                }
+                    }
+                }
             }
         }
         false
@@ -1206,7 +1208,8 @@ mod tests {
                 stack.damage_item(amount),
                 DamageResult::Broken,
                 "expected item to break for amount={amount}"
-            );            assert!(
+            );
+            assert!(
                 stack.is_empty(),
                 "item should be destroyed for amount={amount}"
             );
