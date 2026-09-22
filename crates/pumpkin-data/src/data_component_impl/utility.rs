@@ -323,6 +323,10 @@ impl MapDecorationsImpl {
     }
 }
 impl DataComponentImpl for MapDecorationsImpl {
+    fn write_data(&self) -> NbtTag {
+        NbtTag::Compound(NbtCompound::new())
+    }
+
     default_impl!(MapDecorations);
 }
 

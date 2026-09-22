@@ -875,8 +875,11 @@ mod tests {
     use crate::data_component::DataComponent;
     use crate::data_component_impl::{
         CustomDataImpl, CustomNameImpl, DataComponentImpl, EnchantmentsImpl, ItemNameImpl,
-        LoreImpl, UnbreakableImpl,
+        LoreImpl, MapDecorationsImpl, MapIdImpl, UnbreakableImpl,
     };
+    use pumpkin_nbt::Nbt;
+    use pumpkin_nbt::deserializer::NbtReadHelperJava;
+    use std::io::Cursor;
 
     /// Helper: creates a fresh Iron Sword (max_damage 250, damage 0).
     fn iron_sword() -> ItemStack {
@@ -1098,6 +1101,34 @@ mod tests {
                 .name,
             "filled_map.mansion"
         );
+    }
+
+    #[test]
+    fn map_decorations_writes_a_compound_without_corrupting_siblings() {
+        let mut stack = ItemStack::new(1, &Item::FILLED_MAP);
+        stack
+            .patch
+            .push((DataComponent::MapId, Some(MapIdImpl { id: 2 }.to_dyn())));
+        stack.patch.push((
+            DataComponent::MapDecorations,
+            Some(MapDecorationsImpl.to_dyn()),
+        ));
+
+        let mut compound = NbtCompound::new();
+        stack.write_item_stack(&mut compound);
+
+        let components = compound
+            .get_compound("components")
+            .expect("item stack should contain components");
+        assert!(matches!(
+            components.child_tags.get("minecraft:map_decorations"),
+            Some(NbtTag::Compound(value)) if value.is_empty()
+        ));
+        assert_eq!(components.get_int("minecraft:map_id"), Some(2));
+
+        let bytes = Nbt::new(String::new(), compound).write_unnamed();
+        let mut reader = NbtReadHelperJava::new(Cursor::new(bytes.to_vec()));
+        Nbt::read_unnamed(&mut reader).expect("map decorations must not corrupt item NBT");
     }
 
     // ── damage_item ───────────────────────────────────────────────
