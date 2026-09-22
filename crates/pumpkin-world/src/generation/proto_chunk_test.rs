@@ -220,6 +220,53 @@ mod test {
         assert_eq!(chunk_again.pending_block_entities.lock().unwrap().len(), 1);
     }
 
+    #[test]
+    fn unmodeled_chunk_metadata_survives_chunk_data_resume() {
+        use crate::chunk_system::chunk_state::Chunk;
+        use pumpkin_config::lighting::LightingEngineConfig;
+        use pumpkin_nbt::compound::NbtCompound;
+        use pumpkin_nbt::tag::NbtTag;
+
+        let seed = Seed(4242);
+        let world_gen = get_world_gen(seed, Dimension::OVERWORLD, false, Vec::new(), String::new());
+
+        let proto = ProtoChunk::new(3, -2, &world_gen);
+        let mut staged = Chunk::Proto(Box::new(proto));
+        staged.upgrade_to_level_chunk(&Dimension::OVERWORLD, &LightingEngineConfig::Default);
+        let Chunk::Level(chunk_data) = staged else {
+            unreachable!()
+        };
+
+        let mut structures = NbtCompound::new();
+        structures.put_string("marker", "preserve-me".to_string());
+        chunk_data
+            .unmodeled_data
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .put("structures", NbtTag::Compound(structures.clone()));
+
+        let resumed = ProtoChunk::from_chunk_data(&chunk_data, &world_gen);
+        assert_eq!(resumed.stage, StagedChunkEnum::Empty);
+        assert_eq!(
+            resumed.unmodeled_data.get_compound("structures"),
+            Some(&structures)
+        );
+
+        let mut staged_again = Chunk::Proto(Box::new(resumed));
+        staged_again.upgrade_to_level_chunk(&Dimension::OVERWORLD, &LightingEngineConfig::Default);
+        let Chunk::Level(chunk_again) = staged_again else {
+            unreachable!()
+        };
+        assert_eq!(
+            chunk_again
+                .unmodeled_data
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get_compound("structures"),
+            Some(&structures)
+        );
+    }
+
     // Regression test for transposed heightmaps during Noise-stage chunk resume.
     // Flat terrain cannot expose this bug, so use a sloped chunk.
     #[test]

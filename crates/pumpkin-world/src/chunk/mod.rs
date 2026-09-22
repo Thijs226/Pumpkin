@@ -82,6 +82,11 @@ pub struct ChunkData {
     pub dirty: AtomicBool,
     pub inhabited_time: AtomicU64,
     pub custom_data: std::sync::Mutex<NbtCompound>,
+    /// Root-level NBT fields that Pumpkin does not model yet.
+    ///
+    /// Keeping these fields allows a load/save cycle to preserve metadata written by
+    /// newer Minecraft versions instead of silently deleting it.
+    pub unmodeled_data: std::sync::Mutex<NbtCompound>,
 }
 
 pub struct ChunkEntityData {
@@ -618,12 +623,21 @@ impl ChunkData {
             dirty: std::sync::atomic::AtomicBool::new(false),
             inhabited_time: std::sync::atomic::AtomicU64::new(0),
             custom_data: std::sync::Mutex::new(NbtCompound::new()),
+            unmodeled_data: std::sync::Mutex::new(NbtCompound::new()),
         }
     }
 
     #[must_use]
     pub fn empty_sync(x: i32, z: i32) -> std::sync::Arc<Self> {
         std::sync::Arc::new(Self::empty(x, z))
+    }
+
+    #[must_use]
+    pub fn clone_unmodeled_data(&self) -> NbtCompound {
+        self.unmodeled_data
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// Returns the replaced block state ID

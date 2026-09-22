@@ -389,6 +389,29 @@ impl ChunkData {
             .cloned()
             .unwrap_or_default();
 
+        let modeled_root_keys = [
+            "DataVersion",
+            "xPos",
+            "zPos",
+            "yPos",
+            "Status",
+            "Heightmaps",
+            "sections",
+            "block_ticks",
+            "fluid_ticks",
+            "block_entities",
+            "isLightOn",
+            "InhabitedTime",
+            "PumpkinCustomData",
+            "BukkitValues",
+        ];
+        let unmodeled_data = root_tag
+            .child_tags
+            .iter()
+            .filter(|(key, _)| !modeled_root_keys.contains(&key.as_ref()))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+
         Ok(Self {
             section,
             heightmap: std::sync::Mutex::new(heightmaps),
@@ -405,6 +428,7 @@ impl ChunkData {
             blending_data: None,
             inhabited_time: AtomicU64::new(root_tag.get_long("InhabitedTime").unwrap_or(0) as u64),
             custom_data: std::sync::Mutex::new(custom_data),
+            unmodeled_data: std::sync::Mutex::new(unmodeled_data),
         })
     }
 
@@ -452,7 +476,11 @@ impl ChunkData {
 
         let min_section_y = (self.section.min_y >> 4) as i8;
 
-        let mut root_compound = NbtCompound::new();
+        let mut root_compound = self
+            .unmodeled_data
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         root_compound.put_int("DataVersion", WORLD_DATA_VERSION);
         root_compound.put_int("xPos", self.x);
         root_compound.put_int("zPos", self.z);
@@ -980,5 +1008,47 @@ mod tests {
                 .unwrap()
                 .id
         );
+    }
+
+    #[test]
+    fn preserves_unmodeled_root_tags_on_round_trip() {
+        let mut root = NbtCompound::new();
+        root.put_int("DataVersion", WORLD_DATA_VERSION);
+        root.put_int("xPos", 0);
+        root.put_int("zPos", 0);
+        root.put_int("yPos", 0);
+        root.put_string("Status", "minecraft:full".to_string());
+        root.put_list("sections", Vec::new());
+
+        let mut structures = NbtCompound::new();
+        structures.put_compound("starts", NbtCompound::new());
+        let post_processing = NbtTag::List(vec![NbtTag::List(Vec::new())]);
+        let carving_mask = NbtTag::LongArray(vec![1, 2, 3]);
+        let entities = NbtTag::List(vec![NbtTag::Compound(NbtCompound::new())]);
+        root.put_compound("structures", structures.clone());
+        root.put("PostProcessing", post_processing.clone());
+        root.put("carving_mask", carving_mask.clone());
+        root.put_long("LastUpdate", 42);
+        root.put("entities", entities.clone());
+
+        let bytes = pumpkin_nbt::Nbt::from(root).write();
+        let chunk = ChunkData::internal_from_bytes(&bytes, Vector2::new(0, 0))
+            .expect("synthetic chunk should parse");
+        let round_trip_bytes = chunk.internal_to_bytes();
+        let mut round_trip_cursor = std::io::Cursor::new(round_trip_bytes.as_ref());
+        let mut round_trip_reader =
+            pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut round_trip_cursor);
+        let round_trip = pumpkin_nbt::Nbt::read(&mut round_trip_reader)
+            .expect("round-tripped chunk should parse")
+            .root_tag;
+
+        assert_eq!(
+            round_trip.get("structures"),
+            Some(&NbtTag::Compound(structures))
+        );
+        assert_eq!(round_trip.get("PostProcessing"), Some(&post_processing));
+        assert_eq!(round_trip.get("carving_mask"), Some(&carving_mask));
+        assert_eq!(round_trip.get("LastUpdate"), Some(&NbtTag::Long(42)));
+        assert_eq!(round_trip.get("entities"), Some(&entities));
     }
 }

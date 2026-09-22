@@ -144,6 +144,7 @@ pub struct ProtoChunk {
     pub light: ChunkLight,
     pub blending_data: Option<crate::generation::blender::blending_data::BlendingData>,
     pub pending_block_entities: Vec<NbtCompound>,
+    pub unmodeled_data: NbtCompound,
     pending_structure_entities: Vec<NbtCompound>,
     pub fluid_ticks: Vec<ScheduledTick<&'static Fluid>>,
 }
@@ -253,6 +254,7 @@ impl ProtoChunk {
             },
             blending_data: None,
             pending_block_entities: Vec::new(),
+            unmodeled_data: NbtCompound::new(),
             pending_structure_entities: Vec::new(),
             fluid_ticks: Vec::new(),
         }
@@ -284,6 +286,7 @@ impl ProtoChunk {
             .values()
             .cloned()
             .collect();
+        proto_chunk.unmodeled_data = chunk_data.clone_unmodeled_data();
 
         let section_data = &chunk_data.section;
         let heightmap_data = chunk_data
