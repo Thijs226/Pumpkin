@@ -22,6 +22,24 @@ use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::version::JavaMinecraftVersion;
 
+const CRITICAL_PARTICLE_COUNT: u32 = 4;
+
+fn critical_particle_data(
+    start_pos: Vector3<f64>,
+    velocity: Vector3<f64>,
+    index: u32,
+) -> (Vector3<f64>, Vector3<f32>) {
+    let factor = f64::from(index) / f64::from(CRITICAL_PARTICLE_COUNT);
+    (
+        Vector3::new(
+            start_pos.x + velocity.x * factor,
+            start_pos.y + velocity.y * factor,
+            start_pos.z + velocity.z * factor,
+        ),
+        Vector3::default(),
+    )
+}
+
 /// Represents the pickup rules for arrows
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArrowPickup {
@@ -677,23 +695,9 @@ impl EntityBase for ArrowEntity {
         }
 
         if self.is_critical.load(Ordering::Relaxed) {
-            for i in 0..4 {
-                let factor = f64::from(i) / 4.0;
-                world.spawn_particle(
-                    Vector3::new(
-                        start_pos.x + velocity.x * factor,
-                        start_pos.y + velocity.y * factor,
-                        start_pos.z + velocity.z * factor,
-                    ),
-                    Vector3::new(
-                        -velocity.x as f32,
-                        (-velocity.y + 0.2) as f32,
-                        -velocity.z as f32,
-                    ),
-                    0.0,
-                    1,
-                    Particle::Crit,
-                );
+            for i in 0..CRITICAL_PARTICLE_COUNT {
+                let (position, offset) = critical_particle_data(start_pos, velocity, i);
+                world.spawn_particle(position, offset, 0.0, 1, Particle::Crit);
             }
         }
 
@@ -1118,7 +1122,7 @@ fn get_hit_face(hit_pos: Vector3<f64>, block_pos: BlockPos) -> pumpkin_data::Blo
 
 #[cfg(test)]
 mod tests {
-    use super::ArrowEntity;
+    use super::{ArrowEntity, critical_particle_data};
     use pumpkin_data::data_component::DataComponent;
     use pumpkin_data::data_component_impl::{
         DataComponentImpl, PotionContentsImpl, PotionDurationScaleImpl,
@@ -1126,6 +1130,7 @@ mod tests {
     use pumpkin_data::entity::EntityType;
     use pumpkin_data::item::Item;
     use pumpkin_data::item_stack::ItemStack;
+    use pumpkin_util::math::vector3::Vector3;
 
     fn tipped_payload(count: u8) -> ItemStack {
         let mut tipped = ItemStack::new(32, &Item::TIPPED_ARROW);
@@ -1146,6 +1151,20 @@ mod tests {
             Some(PotionDurationScaleImpl { scale: 0.5 }.to_dyn()),
         ));
         tipped.copy_with_count(count)
+    }
+
+    #[test]
+    fn critical_particles_follow_the_arrow_without_velocity_spread() {
+        let start = Vector3::new(10.0, 20.0, 30.0);
+        let velocity = Vector3::new(2.0, 4.0, 6.0);
+
+        let (first_position, first_offset) = critical_particle_data(start, velocity, 0);
+        let (last_position, last_offset) = critical_particle_data(start, velocity, 3);
+
+        assert_eq!(first_position, start);
+        assert_eq!(last_position, Vector3::new(11.5, 23.0, 34.5));
+        assert_eq!(first_offset, Vector3::default());
+        assert_eq!(last_offset, Vector3::default());
     }
 
     #[test]
