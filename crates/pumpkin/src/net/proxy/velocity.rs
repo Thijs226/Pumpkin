@@ -30,6 +30,10 @@ const PLAYER_INFO_CHANNEL: &str = "velocity:player_info";
 pub enum VelocityError {
     #[error("No response data received")]
     NoData,
+    #[error("Missing expected response message id")]
+    MissingMessageId,
+    #[error("Unexpected response message id: expected {expected}, received {received}")]
+    MessageIdMismatch { expected: i32, received: i32 },
     #[error("Unable to verify player details")]
     FailedVerifyIntegrity,
     #[error("Failed to read forward version")]
@@ -49,8 +53,8 @@ pub enum VelocityError {
 }
 
 pub async fn velocity_login(connection: &mut PendingConnection) {
-    // TODO: Validate the packet transaction id from the plugin response with this
     let velocity_message_id: i32 = rand::rng().random();
+    connection.velocity_message_id = Some(velocity_message_id);
 
     let mut buf = BytesMut::new();
     buf.put_u8(MAX_SUPPORTED_FORWARDING_VERSION);
@@ -113,8 +117,18 @@ pub fn receive_velocity_plugin_response(
     port: u16,
     config: &VelocityConfig,
     response: SLoginPluginResponse,
+    expected_message_id: Option<i32>,
 ) -> Result<(GameProfile, SocketAddr), VelocityError> {
     debug!("Received velocity response");
+    let expected_message_id = expected_message_id.ok_or(VelocityError::MissingMessageId)?;
+    let received_message_id = response.message_id.0;
+    if received_message_id != expected_message_id {
+        return Err(VelocityError::MessageIdMismatch {
+            expected: expected_message_id,
+            received: received_message_id,
+        });
+    }
+
     if let Some(data) = response.data {
         if data.len() < 32 {
             return Err(VelocityError::FailedVerifyIntegrity);
@@ -151,4 +165,59 @@ pub fn receive_velocity_plugin_response(
         return Ok((profile, socket_addr));
     }
     Err(VelocityError::NoData)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pumpkin_protocol::codec::var_int::VarInt;
+
+    fn response(message_id: i32) -> SLoginPluginResponse {
+        SLoginPluginResponse {
+            message_id: VarInt(message_id),
+            data: None,
+        }
+    }
+
+    #[test]
+    fn velocity_response_rejects_unexpected_message_id() {
+        let result = receive_velocity_plugin_response(
+            25565,
+            &VelocityConfig::default(),
+            response(7),
+            Some(8),
+        );
+
+        assert!(matches!(
+            result,
+            Err(VelocityError::MessageIdMismatch {
+                expected: 8,
+                received: 7
+            })
+        ));
+    }
+
+    #[test]
+    fn velocity_response_with_matching_message_id_reaches_payload_validation() {
+        let result = receive_velocity_plugin_response(
+            25565,
+            &VelocityConfig::default(),
+            response(8),
+            Some(8),
+        );
+
+        assert!(matches!(result, Err(VelocityError::NoData)));
+    }
+
+    #[test]
+    fn velocity_response_requires_an_expected_message_id() {
+        let result = receive_velocity_plugin_response(
+            25565,
+            &VelocityConfig::default(),
+            response(8),
+            None,
+        );
+
+        assert!(matches!(result, Err(VelocityError::MissingMessageId)));
+    }
 }

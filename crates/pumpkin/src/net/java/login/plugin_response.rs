@@ -28,10 +28,12 @@ impl PendingConnection {
                 }
             }
         } else if proxy_config.velocity.enabled {
+            let expected_message_id = self.velocity_message_id.take();
             match velocity::receive_velocity_plugin_response(
                 self.address.port(),
                 &proxy_config.velocity,
                 plugin_response,
+                expected_message_id,
             ) {
                 Ok((profile, new_address)) => {
                     self.gameprofile = Some(profile.clone());

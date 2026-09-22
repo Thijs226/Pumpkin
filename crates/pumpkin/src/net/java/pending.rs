@@ -69,6 +69,7 @@ pub struct PendingConnection {
     pub packet_limiter: PacketRateLimiter,
     pub verify_token: Option<[u8; 4]>,
     pub vine_challenge: Option<[u8; 16]>,
+    pub velocity_message_id: Option<i32>,
 }
 
 impl PendingConnection {
@@ -95,6 +96,7 @@ impl PendingConnection {
             packet_limiter,
             verify_token: None,
             vine_challenge: None,
+            velocity_message_id: None,
         }
     }
 
