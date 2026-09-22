@@ -1,6 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_data::world::RAW;
+use pumpkin_protocol::bedrock::server::text::SText;
+use pumpkin_protocol::java::client::play::CSystemChatMessage;
 
 impl JavaClient {
     pub async fn handle_chat_message(
@@ -70,15 +71,9 @@ impl JavaClient {
                 if server.basic_config.allow_chat_reports {
                     world.broadcast_secure_player_chat(player, &chat_message, &decorated_message);
                 } else {
-                    let outgoing = crate::net::chat::PlayerChatMessage::system(message).with_unsigned_content(decorated_message);
-                    world.broadcast_chat_message(
-                        &outgoing,
-                        Player::is_text_filtering_enabled,
-                        Some(player),
-                        (RAW + 1).into(),
-                        &TextComponent::empty(),
-                        None,
-                    );
+                    let je_packet = CSystemChatMessage::new(&decorated_message, false);
+                    let be_packet = SText::new(decorated_message.clone().get_text(), String::new());
+                    world.broadcast_editioned(&je_packet, &be_packet);
                 }
             }
         }}
