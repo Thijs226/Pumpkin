@@ -314,6 +314,19 @@ impl PartialEq for World {
 
 impl Eq for World {}
 
+fn prepare_respawn_state(
+    keep_inventory: bool,
+    clear_inventory: impl FnOnce(),
+    move_player: impl FnOnce(),
+    restore_state: impl FnOnce(),
+) {
+    if !keep_inventory {
+        clear_inventory();
+    }
+    move_player();
+    restore_state();
+}
+
 impl World {
     pub async fn get_block_state_id_async(&self, position: &BlockPos) -> BlockStateId {
         if !self.is_in_build_limit(*position) {
@@ -4439,22 +4452,26 @@ impl World {
             )
             .await;
 
-        player.living_entity.reset_state();
+        // Finish server-side death cleanup and move the player away from the death location
+        // before restoring health. Item collision runs on the server tick and may otherwise
+        // insert nearby death drops while the asynchronous respawn sequence is in progress.
+        prepare_respawn_state(
+            keep_inventory,
+            || {
+                player.set_experience(0, 0.0, 0);
+                player.inventory.clear();
+            },
+            || {
+                player.get_entity().set_pos(position);
+                player.get_entity().set_rotation(yaw, pitch);
+                player.get_entity().last_pos.store(position);
+            },
+            || player.living_entity.reset_state(),
+        );
 
         player.send_permission_lvl_update();
 
         player.hunger_manager.restart();
-
-        if !keep_inventory {
-            player.set_experience(0, 0.0, 0);
-            player.inventory.clear();
-        }
-
-        // Set entity position BEFORE loading chunks, so chunks load at the right location
-        // This mirrors the initial spawn flow where update_position is called before teleport
-        player.get_entity().set_pos(position);
-        player.get_entity().set_rotation(yaw, pitch);
-        player.get_entity().last_pos.store(position);
 
         // TODO: difficulty, exp bar, status effect
 
@@ -7821,5 +7838,38 @@ mod tests {
             GameRuleValue::Int(v) => assert_eq!(*v, 20),
             GameRuleValue::Bool(_) => panic!("expected int"),
         }
+    }
+
+    #[test]
+    fn respawn_restores_state_after_clearing_and_moving() {
+        use std::cell::RefCell;
+
+        let steps = RefCell::new(Vec::new());
+        super::prepare_respawn_state(
+            false,
+            || steps.borrow_mut().push("clear inventory"),
+            || steps.borrow_mut().push("move player"),
+            || steps.borrow_mut().push("restore state"),
+        );
+
+        assert_eq!(
+            steps.into_inner(),
+            vec!["clear inventory", "move player", "restore state"]
+        );
+    }
+
+    #[test]
+    fn respawn_keeps_inventory_before_moving_and_restoring() {
+        use std::cell::RefCell;
+
+        let steps = RefCell::new(Vec::new());
+        super::prepare_respawn_state(
+            true,
+            || steps.borrow_mut().push("clear inventory"),
+            || steps.borrow_mut().push("move player"),
+            || steps.borrow_mut().push("restore state"),
+        );
+
+        assert_eq!(steps.into_inner(), vec!["move player", "restore state"]);
     }
 }
