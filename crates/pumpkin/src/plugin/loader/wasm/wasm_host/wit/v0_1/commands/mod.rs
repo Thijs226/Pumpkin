@@ -337,10 +337,13 @@ impl pumpkin::plugin::command::HostCommand for PluginHostState {
     }
 
     async fn drop(&mut self, rep: Resource<Command>) -> wasmtime::Result<()> {
-        self.resource_table
+        match self
+            .resource_table
             .delete::<CommandResource>(Resource::new_own(rep.rep()))
-            .map_err(wasmtime::Error::from)?;
-        Ok(())
+        {
+            Ok(_) | Err(wasmtime::component::ResourceTableError::NotPresent) => Ok(()),
+            Err(error) => Err(wasmtime::Error::from(error)),
+        }
     }
 }
 
@@ -909,5 +912,30 @@ const fn map_util_locale_to_wit(locale: pumpkin_util::translation::Locale) -> Lo
         pumpkin_util::translation::Locale::ZhHk => Locale::ZhHk,
         pumpkin_util::translation::Locale::ZhTw => Locale::ZhTw,
         pumpkin_util::translation::Locale::ZlmArab => Locale::ZlmArab,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn dropping_consumed_command_resource_is_idempotent() {
+        let mut state = PluginHostState::new();
+        let command = state
+            .add_command(WasmCommand::new(
+                vec!["test".to_string()],
+                "test command".to_string(),
+            ))
+            .expect("command resource should be created");
+
+        state
+            .resource_table
+            .delete::<CommandResource>(Resource::new_own(command.rep()))
+            .expect("command resource should be consumed");
+
+        <PluginHostState as pumpkin::plugin::command::HostCommand>::drop(&mut state, command)
+            .await
+            .expect("dropping a consumed command should be harmless");
     }
 }
