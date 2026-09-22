@@ -1,7 +1,7 @@
 //! Storage and convenience methods for NBT compound tags.
 
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Write};
 use uuid::Uuid;
 
 use crate::deserializer::NbtReadHelper;
@@ -399,7 +399,25 @@ impl Display for NbtTag {
             Self::Long(v) => write!(f, "{v}L"),
             Self::Float(v) => write!(f, "{v}f"),
             Self::Double(v) => write!(f, "{v}d"),
-            Self::String(v) => write!(f, "\"{v}\""), // TODO: Proper escaping needed for robust SNBT
+            Self::String(v) => {
+                f.write_char('"')?;
+                for character in v.chars() {
+                    match character {
+                        '"' => f.write_str("\\\"")?,
+                        '\\' => f.write_str("\\\\")?,
+                        '\u{8}' => f.write_str("\\b")?,
+                        '\t' => f.write_str("\\t")?,
+                        '\n' => f.write_str("\\n")?,
+                        '\u{c}' => f.write_str("\\f")?,
+                        '\r' => f.write_str("\\r")?,
+                        character if character.is_control() => {
+                            write!(f, "\\u{:04x}", character as u32)?;
+                        }
+                        character => f.write_char(character)?,
+                    }
+                }
+                f.write_char('"')
+            }
             Self::Compound(v) => write!(f, "{v}"),
             Self::ByteArray(v) => {
                 f.write_str("[B;")?;
@@ -448,6 +466,7 @@ impl Display for NbtTag {
 #[cfg(test)]
 mod tests {
     use super::NbtCompound;
+    use crate::tag::NbtTag;
     use uuid::Uuid;
 
     #[test]
@@ -462,5 +481,15 @@ mod tests {
         let mut short = NbtCompound::new();
         short.put("UUID", crate::tag::NbtTag::IntArray(vec![1, 2, 3]));
         assert_eq!(short.get_uuid("UUID"), None);
+    }
+
+    #[test]
+    fn display_escapes_snbt_string_contents() {
+        let value = NbtTag::String("quote \" slash \\ newline\n tab\t control\u{1}".into());
+
+        assert_eq!(
+            value.to_string(),
+            "\"quote \\\" slash \\\\ newline\\n tab\\t control\\u0001\""
+        );
     }
 }
