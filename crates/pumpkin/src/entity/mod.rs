@@ -4285,7 +4285,7 @@ impl Entity {
         if let Some(name_json) = nbt.get_string("CustomName")
             && let Ok(component) = pumpkin_util::serde_json::from_str(name_json)
         {
-            self.custom_name.store(Arc::new(Some(component)));
+            self.set_custom_name(component);
         }
         self.custom_name_visible
             .store(nbt.get_bool("CustomNameVisible").unwrap_or(false), Relaxed);
@@ -4443,6 +4443,35 @@ impl Flag {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arc_swap::ArcSwap;
+    use pumpkin_config::world::LevelConfig;
+    use pumpkin_data::dimension::Dimension;
+    use pumpkin_util::world_seed::Seed;
+    use pumpkin_world::{dimension::into_level, world_info::LevelData};
+    use std::sync::{Arc, Weak};
+
+    use crate::{block::registry::default_registry, server::Server};
+
+    fn test_world() -> (tempfile::TempDir, Arc<World>) {
+        let temp_dir = tempfile::tempdir().expect("create temporary world directory");
+        let dimension = Dimension::OVERWORLD;
+        let level = into_level(
+            dimension.clone(),
+            &LevelConfig::default(),
+            temp_dir.path().to_path_buf(),
+            0,
+        );
+        let level_info = Arc::new(ArcSwap::new(Arc::new(LevelData::default(Seed(0)))));
+        let world = Arc::new(World::load(
+            level,
+            level_info,
+            dimension,
+            default_registry(),
+            Weak::<Server>::new(),
+        ));
+
+        (temp_dir, world)
+    }
 
     #[test]
     fn equipment_break_status_maps_all_slots() {
@@ -4465,5 +4494,28 @@ mod tests {
                 "status mismatch at index {i}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn reading_custom_name_populates_java_entity_metadata() {
+        let (_temp_dir, world) = test_world();
+        let entity = Entity::new(world, Vector3::default(), &EntityType::PIG);
+        let name = TextComponent::text("Persisted name");
+        let mut nbt = NbtCompound::new();
+        nbt.put_string(
+            "CustomName",
+            pumpkin_util::serde_json::to_string(&name).expect("serialize custom name"),
+        );
+
+        entity.read_nbt_non_mut(&nbt);
+
+        assert_eq!(entity.custom_name.load().as_ref().as_ref(), Some(&name));
+        assert!(
+            entity
+                .synched_data
+                .get_non_default_values_for_version(&JavaMinecraftVersion::V_26_3)
+                .is_some(),
+            "loaded custom names must be included in Java entity metadata"
+        );
     }
 }
