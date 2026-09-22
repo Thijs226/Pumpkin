@@ -14,10 +14,14 @@ pub enum HttpError {
     /// Error reading response body.
     #[error("Failed to read HTTP response body: {0}")]
     BodyRead(String),
+    /// Blocking HTTP is not available inside a Wasm plugin.
+    #[error("blocking HTTP client is unavailable on wasm32 targets")]
+    UnsupportedTarget,
 }
 
 /// Helper client for querying Pumpkin marketplace REST APIs.
 pub struct HttpClient {
+    #[cfg(not(target_arch = "wasm32"))]
     client: reqwest::blocking::Client,
 }
 
@@ -31,19 +35,28 @@ impl HttpClient {
     /// Creates a new HTTP client with the specified User-Agent header.
     #[must_use]
     pub fn new(user_agent: &str) -> Self {
-        // reqwest is built with `rustls-no-provider`; install the ring provider (the
-        // one the rest of the workspace uses) before any client is constructed.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let builder = reqwest::blocking::Client::builder().user_agent(user_agent);
-        #[cfg(target_os = "android")]
-        let builder = {
-            let certs = webpki_root_certs::TLS_SERVER_ROOT_CERTS
-                .iter()
-                .filter_map(|c| reqwest::Certificate::from_der(c.as_ref()).ok());
-            builder.tls_certs_only(certs)
-        };
-        let client = builder.build().unwrap_or_default();
-        Self { client }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = user_agent;
+            return Self {};
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // reqwest is built with `rustls-no-provider`; install the ring provider (the
+            // one the rest of the workspace uses) before any client is constructed.
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            let builder = reqwest::blocking::Client::builder().user_agent(user_agent);
+            #[cfg(target_os = "android")]
+            let builder = {
+                let certs = webpki_root_certs::TLS_SERVER_ROOT_CERTS
+                    .iter()
+                    .filter_map(|c| reqwest::Certificate::from_der(c.as_ref()).ok());
+                builder.tls_certs_only(certs)
+            };
+            let client = builder.build().unwrap_or_default();
+            Self { client }
+        }
     }
 
     /// Performs an HTTP GET request and returns the response body as a string.
@@ -52,24 +65,33 @@ impl HttpClient {
     ///
     /// Returns `HttpError` if the request fails or returns a non-2xx status code.
     pub fn get(&self, url: &str) -> Result<String, HttpError> {
-        let response = self
-            .client
-            .get(url)
-            .header("Accept", "application/json")
-            .send()
-            .map_err(|e| HttpError::RequestFailed(e.to_string()))?;
-
-        let status = response.status().as_u16();
-        if status < 200 || status >= 300 {
-            let body = response
-                .text()
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(HttpError::BadStatus(status, body));
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (self, url);
+            return Err(HttpError::UnsupportedTarget);
         }
 
-        response
-            .text()
-            .map_err(|e| HttpError::BodyRead(e.to_string()))
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let response = self
+                .client
+                .get(url)
+                .header("Accept", "application/json")
+                .send()
+                .map_err(|e| HttpError::RequestFailed(e.to_string()))?;
+
+            let status = response.status().as_u16();
+            if status < 200 || status >= 300 {
+                let body = response
+                    .text()
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(HttpError::BadStatus(status, body));
+            }
+
+            response
+                .text()
+                .map_err(|e| HttpError::BodyRead(e.to_string()))
+        }
     }
 
     /// Performs an HTTP POST request with a JSON payload and returns the response body as a string.
@@ -78,25 +100,53 @@ impl HttpClient {
     ///
     /// Returns `HttpError` if the request fails or returns a non-2xx status code.
     pub fn post_json(&self, url: &str, json_payload: &str) -> Result<String, HttpError> {
-        let response = self
-            .client
-            .post(url)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .body(json_payload.to_string())
-            .send()
-            .map_err(|e| HttpError::RequestFailed(e.to_string()))?;
-
-        let status = response.status().as_u16();
-        if status < 200 || status >= 300 {
-            let body = response
-                .text()
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(HttpError::BadStatus(status, body));
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (self, url, json_payload);
+            return Err(HttpError::UnsupportedTarget);
         }
 
-        response
-            .text()
-            .map_err(|e| HttpError::BodyRead(e.to_string()))
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let response = self
+                .client
+                .post(url)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .body(json_payload.to_string())
+                .send()
+                .map_err(|e| HttpError::RequestFailed(e.to_string()))?;
+
+            let status = response.status().as_u16();
+            if status < 200 || status >= 300 {
+                let body = response
+                    .text()
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(HttpError::BadStatus(status, body));
+            }
+
+            response
+                .text()
+                .map_err(|e| HttpError::BodyRead(e.to_string()))
+        }
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod tests {
+    use super::{HttpClient, HttpError};
+
+    #[test]
+    fn wasm_http_requests_report_unsupported_target() {
+        let client = HttpClient::default();
+
+        assert!(matches!(
+            client.get("https://example.invalid"),
+            Err(HttpError::UnsupportedTarget)
+        ));
+        assert!(matches!(
+            client.post_json("https://example.invalid", "{}"),
+            Err(HttpError::UnsupportedTarget)
+        ));
     }
 }
