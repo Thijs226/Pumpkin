@@ -92,8 +92,10 @@ fn parse_entry(val: &Value, pool_entries: &mut Vec<DynamicLootEntry>, empty_weig
         }
         "item" | "tag" => {
             if let Some(name) = val.get("name").and_then(Value::as_str) {
-                let (min_count, max_count, bonus_formula) =
-                    val.get("functions").map_or((1, 1, None), parse_functions);
+                let (min_count, max_count, bonus_formula, smelt_condition) = val
+                    .get("functions")
+                    .or_else(|| val.get("modifier"))
+                    .map_or((1, 1, None, None), parse_functions);
                 let conditions = val.get("conditions").map_or(Vec::new(), parse_conditions);
                 let condition = combine_conditions(conditions);
 
@@ -104,6 +106,7 @@ fn parse_entry(val: &Value, pool_entries: &mut Vec<DynamicLootEntry>, empty_weig
                     max_count,
                     condition,
                     bonus_formula,
+                    smelt_condition,
                 });
             }
         }
@@ -118,18 +121,27 @@ fn parse_entry(val: &Value, pool_entries: &mut Vec<DynamicLootEntry>, empty_weig
     }
 }
 
-fn parse_functions(val: &Value) -> (i32, i32, Option<LootBonusFormula>) {
+fn parse_functions(
+    val: &Value,
+) -> (
+    i32,
+    i32,
+    Option<LootBonusFormula>,
+    Option<DynamicLootCondition>,
+) {
     let mut min_count = 1;
     let mut max_count = 1;
     let mut bonus_formula = None;
+    let mut smelt_condition = None;
 
-    let Some(functions) = val.as_array() else {
-        return (min_count, max_count, bonus_formula);
-    };
+    let functions: Vec<&Value> = val
+        .as_array()
+        .map_or_else(|| vec![val], |functions| functions.iter().collect());
 
     for func in functions {
         let func_type = func
             .get("function")
+            .or_else(|| func.get("type"))
             .and_then(Value::as_str)
             .unwrap_or_default();
         let func_type = func_type.strip_prefix("minecraft:").unwrap_or(func_type);
@@ -177,20 +189,27 @@ fn parse_functions(val: &Value) -> (i32, i32, Option<LootBonusFormula>) {
                     }
                 }
             }
-            "looting_enchant" => {
+            "looting_enchant" | "enchanted_count_increase" => {
                 let max_bonus = func.get("count").map_or(1, |c| {
                     c.get("max")
                         .and_then(Value::as_i64)
+                        .or_else(|| c.get("max").and_then(Value::as_f64).map(|v| v as i64))
                         .or_else(|| c.as_i64())
                         .unwrap_or(1) as i32
                 });
                 bonus_formula = Some(LootBonusFormula::UniformBonusCount(max_bonus.max(1)));
             }
+            "furnace_smelt" => {
+                smelt_condition = Some(
+                    func.get("condition")
+                        .map_or(DynamicLootCondition::None, parse_condition),
+                );
+            }
             _ => {}
         }
     }
 
-    (min_count, max_count, bonus_formula)
+    (min_count, max_count, bonus_formula, smelt_condition)
 }
 
 fn parse_conditions(val: &Value) -> Vec<DynamicLootCondition> {
@@ -203,6 +222,7 @@ fn parse_conditions(val: &Value) -> Vec<DynamicLootCondition> {
 fn parse_condition(val: &Value) -> DynamicLootCondition {
     let cond_type = val
         .get("condition")
+        .or_else(|| val.get("type"))
         .and_then(Value::as_str)
         .unwrap_or_default();
     let cond_type = cond_type.strip_prefix("minecraft:").unwrap_or(cond_type);
@@ -279,19 +299,7 @@ fn parse_condition(val: &Value) -> DynamicLootCondition {
                 DynamicLootCondition::None
             }
         }
-        "entity_properties" => {
-            let on_fire = val
-                .get("predicate")
-                .and_then(|p| p.get("flags"))
-                .and_then(|f| f.get("is_on_fire"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            if on_fire {
-                DynamicLootCondition::EntityOnFire
-            } else {
-                DynamicLootCondition::None
-            }
-        }
+        "entity_properties" => parse_entity_properties_condition(val),
         "weather_check" => {
             let raining = val.get("raining").and_then(Value::as_bool);
             let thundering = val.get("thundering").and_then(Value::as_bool);
@@ -302,6 +310,42 @@ fn parse_condition(val: &Value) -> DynamicLootCondition {
         }
         _ => DynamicLootCondition::None,
     }
+}
+
+fn parse_entity_properties_condition(val: &Value) -> DynamicLootCondition {
+    let predicate = val.get("predicate");
+    let on_fire = predicate
+        .and_then(|p| p.get("flags").or_else(|| p.get("minecraft:flags")))
+        .and_then(|f| f.get("is_on_fire"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if on_fire {
+        return DynamicLootCondition::EntityOnFire;
+    }
+
+    let Some(enchantments) = predicate
+        .and_then(|p| p.get("equipment").or_else(|| p.get("minecraft:equipment")))
+        .and_then(|equipment| equipment.get("mainhand"))
+        .and_then(|mainhand| mainhand.get("predicates"))
+        .and_then(|predicates| {
+            predicates
+                .get("minecraft:enchantments")
+                .or_else(|| predicates.get("enchantments"))
+        })
+        .and_then(Value::as_array)
+        .and_then(|enchantments| {
+            enchantments.iter().find_map(|enchantment| {
+                enchantment
+                    .get("enchantments")
+                    .and_then(Value::as_str)
+                    .map(ToString::to_string)
+            })
+        })
+    else {
+        return DynamicLootCondition::None;
+    };
+
+    DynamicLootCondition::ToolHasEnchantmentTag(enchantments)
 }
 
 fn combine_conditions(conditions: Vec<DynamicLootCondition>) -> DynamicLootCondition {
@@ -471,6 +515,109 @@ mod tests {
             pool.entries[1].condition,
             DynamicLootCondition::SurvivesExplosion
         );
+    }
+
+    #[test]
+    fn furnace_smelt_modifier_cooks_entity_drops_when_on_fire() {
+        let json = r#"{
+            "type": "minecraft:entity",
+            "pools": [
+                {
+                    "rolls": 1,
+                    "entries": [
+                        {
+                            "type": "minecraft:item",
+                            "name": "minecraft:beef",
+                            "modifier": [
+                                {
+                                    "type": "minecraft:set_count",
+                                    "count": 1
+                                },
+                                {
+                                    "type": "minecraft:furnace_smelt",
+                                    "condition": {
+                                        "type": "minecraft:entity_properties",
+                                        "entity": "this",
+                                        "predicate": {
+                                            "minecraft:flags": {
+                                                "is_on_fire": true
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let table = parse_loot_table(json).expect("valid entity loot table");
+        let burning = crate::world::loot::LootContextParameters {
+            is_on_fire: Some(true),
+            ..Default::default()
+        };
+        let drops = crate::world::loot::generate_dynamic_loot_with_context(&table, 0, &burning);
+
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].item.registry_key, "cooked_beef");
+
+        let not_burning = crate::world::loot::LootContextParameters::default();
+        let drops = crate::world::loot::generate_dynamic_loot_with_context(&table, 0, &not_burning);
+
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].item.registry_key, "beef");
+    }
+
+    #[test]
+    fn furnace_smelt_modifier_checks_fire_aspect_tool() {
+        let json = r##"{
+            "type": "minecraft:entity",
+            "pools": [
+                {
+                    "rolls": 1,
+                    "entries": [
+                        {
+                            "type": "minecraft:item",
+                            "name": "minecraft:beef",
+                            "modifier": {
+                                "type": "minecraft:furnace_smelt",
+                                "condition": {
+                                    "type": "minecraft:entity_properties",
+                                    "entity": "direct_attacker",
+                                    "predicate": {
+                                        "minecraft:equipment": {
+                                            "mainhand": {
+                                                "predicates": {
+                                                    "minecraft:enchantments": [
+                                                        {
+                                                            "enchantments": "#minecraft:smelts_loot"
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }"##;
+
+        let table = parse_loot_table(json).expect("valid entity loot table");
+        let mut tool =
+            pumpkin_data::item_stack::ItemStack::new(1, &pumpkin_data::item::Item::DIAMOND_SWORD);
+        tool.add_enchantment(&pumpkin_data::Enchantment::FIRE_ASPECT, 1);
+        let params = crate::world::loot::LootContextParameters {
+            tool: Some(tool),
+            ..Default::default()
+        };
+        let drops = crate::world::loot::generate_dynamic_loot_with_context(&table, 0, &params);
+
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].item.registry_key, "cooked_beef");
     }
 
     #[test]

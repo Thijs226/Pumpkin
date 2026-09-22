@@ -76,6 +76,10 @@ struct PredicateStruct {
     items: Option<serde_json::Value>,
     #[serde(default)]
     predicates: Option<serde_json::Value>,
+    #[serde(default, rename = "minecraft:flags")]
+    flags: Option<serde_json::Value>,
+    #[serde(default, rename = "minecraft:equipment")]
+    equipment: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -208,18 +212,55 @@ fn parse_condition(cond: &ConditionStruct) -> LootCondition {
         }
         "minecraft:any_of" => {
             if let Some(terms) = &cond.terms {
-                let has_silk = terms
+                let parsed: Vec<_> = terms
                     .iter()
-                    .any(|t| resolve_condition(t) == LootCondition::SilkTouch);
-                let has_shears = terms
-                    .iter()
-                    .any(|t| resolve_condition(t) == LootCondition::Shears);
-                if has_silk && has_shears {
-                    return LootCondition::SilkTouchOrShears;
-                } else if has_silk {
-                    return LootCondition::SilkTouch;
-                } else if has_shears {
-                    return LootCondition::Shears;
+                    .map(resolve_condition)
+                    .filter(|condition| *condition != LootCondition::None)
+                    .collect();
+                if parsed.len() == 2 {
+                    if parsed.contains(&LootCondition::SilkTouch)
+                        && parsed.contains(&LootCondition::Shears)
+                    {
+                        return LootCondition::SilkTouchOrShears;
+                    }
+                }
+                return match parsed.len() {
+                    0 => LootCondition::None,
+                    1 => parsed[0],
+                    _ => LootCondition::AnyOf(Box::leak(parsed.into_boxed_slice())),
+                };
+            }
+            LootCondition::None
+        }
+        "minecraft:entity_properties" => {
+            if let Some(pred) = &cond.predicate {
+                if pred.flags.as_ref().is_some_and(|flags| {
+                    flags
+                        .get("is_on_fire")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(false)
+                }) {
+                    return LootCondition::EntityOnFire;
+                }
+
+                if let Some(tag) = pred
+                    .equipment
+                    .as_ref()
+                    .and_then(|equipment| equipment.get("mainhand"))
+                    .and_then(|mainhand| mainhand.get("predicates"))
+                    .and_then(|predicates| predicates.get("minecraft:enchantments"))
+                    .and_then(serde_json::Value::as_array)
+                    .and_then(|enchantments| {
+                        enchantments.iter().find_map(|enchantment| {
+                            enchantment
+                                .get("enchantments")
+                                .and_then(serde_json::Value::as_str)
+                        })
+                    })
+                {
+                    return LootCondition::ToolHasEnchantmentTag(Box::leak(
+                        tag.to_string().into_boxed_str(),
+                    ));
                 }
             }
             LootCondition::None
@@ -297,6 +338,8 @@ struct EntryFunctionStruct {
     formula: Option<String>,
     #[serde(default)]
     parameters: Option<BonusParameterStruct>,
+    #[serde(default)]
+    condition: Option<ConditionValue>,
     count: Option<CountStruct>,
 }
 
@@ -366,6 +409,7 @@ struct ParsedEntry {
     max_count: i32,
     condition: LootCondition,
     bonus_formula: Option<LootBonusFormula>,
+    smelt_condition: Option<LootCondition>,
 }
 
 fn extract_entries(
@@ -442,6 +486,11 @@ fn extract_entries_with_depth(
                         None
                     }
                 });
+                let smelt_condition = entry
+                    .functions
+                    .iter()
+                    .find(|f| f.function == "minecraft:furnace_smelt")
+                    .map(|f| condition_of(f.condition.as_ref()));
 
                 out.push(ParsedEntry {
                     item: name.clone(),
@@ -450,6 +499,7 @@ fn extract_entries_with_depth(
                     max_count,
                     condition: entry_cond,
                     bonus_formula,
+                    smelt_condition,
                 });
             }
         }
@@ -481,6 +531,7 @@ fn extract_entries_with_depth(
                                 max_count: 1,
                                 condition: entry_cond,
                                 bonus_formula: None,
+                                smelt_condition: None,
                             });
                         }
                     }
@@ -634,6 +685,15 @@ fn condition_to_tokens(cond: LootCondition) -> TokenStream {
             let tokens: Vec<TokenStream> = list.iter().copied().map(condition_to_tokens).collect();
             quote! { LootCondition::AllOf(&[#(#tokens),*]) }
         }
+        LootCondition::AnyOf(list) => {
+            let tokens: Vec<TokenStream> = list.iter().copied().map(condition_to_tokens).collect();
+            quote! { LootCondition::AnyOf(&[#(#tokens),*]) }
+        }
+        LootCondition::EntityOnFire => quote! { LootCondition::EntityOnFire },
+        LootCondition::ToolHasEnchantmentTag(tag) => {
+            let tag = LitStr::new(tag, Span::call_site());
+            quote! { LootCondition::ToolHasEnchantmentTag(#tag) }
+        }
     }
 }
 
@@ -688,6 +748,13 @@ fn emit_table(
                 let max_count = e.max_count;
                 let cond_tokens = condition_to_tokens(e.condition);
                 let bonus_tokens = bonus_to_tokens(e.bonus_formula);
+                let smelt_tokens = e.smelt_condition.map_or_else(
+                    || quote! { None },
+                    |condition| {
+                        let tokens = condition_to_tokens(condition);
+                        quote! { Some(#tokens) }
+                    },
+                );
 
                 quote! {
                     LootEntry {
@@ -697,6 +764,7 @@ fn emit_table(
                         max_count: #max_count,
                         condition: #cond_tokens,
                         bonus_formula: #bonus_tokens,
+                        smelt_condition: #smelt_tokens,
                     }
                 }
             })

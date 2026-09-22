@@ -22,6 +22,9 @@ pub enum LootCondition {
         chances: &'static [f32],
     },
     AllOf(&'static [Self]),
+    AnyOf(&'static [Self]),
+    EntityOnFire,
+    ToolHasEnchantmentTag(&'static str),
 }
 
 /// Bonus count formulas when tools have fortune or looting enchantments.
@@ -47,6 +50,8 @@ pub struct LootEntry {
     pub condition: LootCondition,
     /// Bonus formula to apply with fortune / looting (if any).
     pub bonus_formula: Option<LootBonusFormula>,
+    /// Condition under which the selected item is smelted before dropping.
+    pub smelt_condition: Option<LootCondition>,
 }
 
 /// One roll pool inside a loot table.
@@ -103,6 +108,7 @@ pub enum DynamicLootCondition {
     AnyOf(Vec<Self>),
     Inverted(Box<Self>),
     EntityOnFire,
+    ToolHasEnchantmentTag(String),
     WeatherCheck {
         raining: Option<bool>,
         thundering: Option<bool>,
@@ -136,6 +142,13 @@ impl From<LootCondition> for DynamicLootCondition {
             LootCondition::AllOf(conditions) => {
                 Self::AllOf(conditions.iter().copied().map(Self::from).collect())
             }
+            LootCondition::AnyOf(conditions) => {
+                Self::AnyOf(conditions.iter().copied().map(Self::from).collect())
+            }
+            LootCondition::EntityOnFire => Self::EntityOnFire,
+            LootCondition::ToolHasEnchantmentTag(tag) => {
+                Self::ToolHasEnchantmentTag((*tag).to_string())
+            }
         }
     }
 }
@@ -155,6 +168,8 @@ pub struct DynamicLootEntry {
     pub condition: DynamicLootCondition,
     /// Bonus formula to apply with fortune / looting (if any).
     pub bonus_formula: Option<LootBonusFormula>,
+    /// Condition under which the selected item is smelted before dropping.
+    pub smelt_condition: Option<DynamicLootCondition>,
 }
 
 impl From<LootEntry> for DynamicLootEntry {
@@ -166,6 +181,7 @@ impl From<LootEntry> for DynamicLootEntry {
             max_count: e.max_count,
             condition: DynamicLootCondition::from(e.condition),
             bonus_formula: e.bonus_formula,
+            smelt_condition: e.smelt_condition.map(DynamicLootCondition::from),
         }
     }
 }

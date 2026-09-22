@@ -3,6 +3,8 @@ use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::recipes::CookingRecipeKind;
+use pumpkin_data::tag::Taggable;
 pub use pumpkin_util::loot_table::{
     DynamicLootCondition, DynamicLootEntry, DynamicLootPool, DynamicLootTable, LootBonusFormula,
     LootCondition, LootEntry, LootPool, LootTable,
@@ -27,6 +29,13 @@ pub struct LootContextParameters {
     /// Whether the killed entity was on fire at death time.
     /// Computed from `Entity.fire_ticks > 0`.
     pub is_on_fire: Option<bool>,
+}
+
+struct LootGenerationContext<'a> {
+    has_silk_touch: bool,
+    has_shears: bool,
+    fortune_level: i32,
+    params: &'a LootContextParameters,
 }
 
 fn check_dynamic_condition(
@@ -78,6 +87,16 @@ fn check_dynamic_condition(
             !check_dynamic_condition(cond, has_silk_touch, has_shears, fortune_level, params, rng)
         }
         DynamicLootCondition::EntityOnFire => params.is_on_fire.unwrap_or(false),
+        DynamicLootCondition::ToolHasEnchantmentTag(tag) => {
+            params.tool.as_ref().is_some_and(|tool| {
+                pumpkin_data::Enchantment::get_tag_values(tag).is_some_and(|enchantments| {
+                    enchantments.iter().any(|name| {
+                        pumpkin_data::Enchantment::from_name(name)
+                            .is_some_and(|enchantment| tool.get_enchantment_level(enchantment) > 0)
+                    })
+                })
+            })
+        }
         DynamicLootCondition::WeatherCheck {
             raining,
             thundering,
@@ -139,6 +158,18 @@ fn check_condition(
         LootCondition::AllOf(conditions) => conditions
             .iter()
             .all(|c| check_condition(*c, has_silk_touch, has_shears, fortune_level, params, rng)),
+        LootCondition::AnyOf(conditions) => conditions
+            .iter()
+            .any(|c| check_condition(*c, has_silk_touch, has_shears, fortune_level, params, rng)),
+        LootCondition::EntityOnFire => params.is_on_fire.unwrap_or(false),
+        LootCondition::ToolHasEnchantmentTag(tag) => params.tool.as_ref().is_some_and(|tool| {
+            pumpkin_data::Enchantment::get_tag_values(tag).is_some_and(|enchantments| {
+                enchantments.iter().any(|name| {
+                    pumpkin_data::Enchantment::from_name(name)
+                        .is_some_and(|enchantment| tool.get_enchantment_level(enchantment) > 0)
+                })
+            })
+        }),
     }
 }
 
@@ -179,6 +210,28 @@ fn apply_bonus_formula(
     }
 }
 
+fn furnace_smelt(item: &'static Item, count: i32) -> (&'static Item, i32) {
+    let Some(recipe) = pumpkin_data::recipes::get_cooking_recipe_with_ingredient(
+        item,
+        CookingRecipeKind::Smelting,
+    ) else {
+        return (item, count);
+    };
+
+    let result_item = Item::from_registry_key(
+        recipe
+            .result
+            .id
+            .strip_prefix("minecraft:")
+            .unwrap_or(recipe.result.id),
+    )
+    .unwrap_or(item);
+    (
+        result_item,
+        count.saturating_mul(i32::from(recipe.result.count)),
+    )
+}
+
 #[must_use]
 pub fn generate_loot(table: &LootTable, seed: i64) -> Vec<ItemStack> {
     generate_loot_with_context(table, seed, &LootContextParameters::default())
@@ -214,7 +267,6 @@ pub fn generate_loot_with_context(
             .map_or(0, |e| tool.get_enchantment_level(e));
         fortune.max(looting)
     });
-
     for pool in table.pools {
         if !check_condition(
             pool.condition,
@@ -254,51 +306,85 @@ pub fn generate_loot_with_context(
                 0
             };
 
-        for _ in 0..rolls {
-            let entry_weight: i32 = eligible_entries.iter().map(|e| e.weight).sum();
-            let total_weight = entry_weight + pool.empty_weight;
-            if total_weight == 0 {
-                continue;
-            }
-
-            let mut pick = rng.next_bounded_i32(total_weight);
-
-            pick -= pool.empty_weight;
-            if pick < 0 {
-                continue;
-            }
-
-            for entry in &eligible_entries {
-                pick -= entry.weight;
-                if pick < 0 {
-                    let count_range = entry.max_count - entry.min_count;
-                    let base_count = entry.min_count
-                        + if count_range > 0 {
-                            rng.next_bounded_i32(count_range + 1)
-                        } else {
-                            0
-                        };
-
-                    let mut final_count = base_count;
-                    if let Some(bonus) = entry.bonus_formula {
-                        final_count =
-                            apply_bonus_formula(final_count, bonus, fortune_level, &mut rng);
-                    }
-
-                    if final_count > 0 {
-                        let item_key = entry.item.strip_prefix("minecraft:").unwrap_or(entry.item);
-
-                        if let Some(item) = Item::from_registry_key(item_key) {
-                            items_to_place.push(ItemStack::new(final_count as u8, item));
-                        }
-                    }
-                    break;
-                }
-            }
-        }
+        let context = LootGenerationContext {
+            has_silk_touch,
+            has_shears,
+            fortune_level,
+            params,
+        };
+        roll_static_entries(
+            rolls,
+            pool.empty_weight,
+            &eligible_entries,
+            &context,
+            &mut rng,
+            &mut items_to_place,
+        );
     }
 
     items_to_place
+}
+
+fn roll_static_entries(
+    rolls: i32,
+    empty_weight: i32,
+    eligible_entries: &[&LootEntry],
+    context: &LootGenerationContext<'_>,
+    rng: &mut Xoroshiro,
+    items_to_place: &mut Vec<ItemStack>,
+) {
+    for _ in 0..rolls {
+        let entry_weight: i32 = eligible_entries.iter().map(|e| e.weight).sum();
+        let total_weight = entry_weight + empty_weight;
+        if total_weight == 0 {
+            continue;
+        }
+
+        let mut pick = rng.next_bounded_i32(total_weight) - empty_weight;
+        if pick < 0 {
+            continue;
+        }
+
+        for entry in eligible_entries {
+            pick -= entry.weight;
+            if pick < 0 {
+                let count_range = entry.max_count - entry.min_count;
+                let base_count = entry.min_count
+                    + if count_range > 0 {
+                        rng.next_bounded_i32(count_range + 1)
+                    } else {
+                        0
+                    };
+
+                let mut final_count = base_count;
+                if let Some(bonus) = entry.bonus_formula {
+                    final_count =
+                        apply_bonus_formula(final_count, bonus, context.fortune_level, rng);
+                }
+
+                if final_count > 0 {
+                    let item_key = entry.item.strip_prefix("minecraft:").unwrap_or(entry.item);
+                    if let Some(item) = Item::from_registry_key(item_key) {
+                        let (item, final_count) = entry
+                            .smelt_condition
+                            .filter(|condition| {
+                                check_condition(
+                                    *condition,
+                                    context.has_silk_touch,
+                                    context.has_shears,
+                                    context.fortune_level,
+                                    context.params,
+                                    rng,
+                                )
+                            })
+                            .map_or((item, final_count), |_| furnace_smelt(item, final_count));
+                        items_to_place.push(ItemStack::new(final_count as u8, item));
+                    }
+                }
+                break;
+            }
+        }
+    }
 }
 
 pub use generate_loot as generate_chest_loot;
@@ -338,6 +424,12 @@ pub fn generate_dynamic_loot_with_context(
             .map_or(0, |e| tool.get_enchantment_level(e));
         fortune.max(looting)
     });
+    let context = LootGenerationContext {
+        has_silk_touch,
+        has_shears,
+        fortune_level,
+        params,
+    };
 
     for pool in &table.pools {
         if !check_dynamic_condition(
@@ -382,7 +474,7 @@ pub fn generate_dynamic_loot_with_context(
             rolls,
             pool.empty_weight,
             &eligible_entries,
-            fortune_level,
+            &context,
             &mut rng,
             &mut items_to_place,
         );
@@ -395,7 +487,7 @@ fn roll_dynamic_entries(
     rolls: i32,
     empty_weight: i32,
     eligible_entries: &[&DynamicLootEntry],
-    fortune_level: i32,
+    context: &LootGenerationContext<'_>,
     rng: &mut Xoroshiro,
     items_to_place: &mut Vec<ItemStack>,
 ) {
@@ -425,14 +517,30 @@ fn roll_dynamic_entries(
 
                 let mut final_count = base_count;
                 if let Some(bonus) = entry.bonus_formula {
-                    final_count = apply_bonus_formula(final_count, bonus, fortune_level, rng);
+                    final_count =
+                        apply_bonus_formula(final_count, bonus, context.fortune_level, rng);
                 }
 
                 if final_count > 0 {
                     let item_key = entry.item.strip_prefix("minecraft:").unwrap_or(&entry.item);
-                    if let Some(item) = Item::from_registry_key(item_key) {
-                        items_to_place.push(ItemStack::new(final_count as u8, item));
-                    }
+                    let Some(item) = Item::from_registry_key(item_key) else {
+                        break;
+                    };
+                    let (item, final_count) = entry
+                        .smelt_condition
+                        .as_ref()
+                        .filter(|condition| {
+                            check_dynamic_condition(
+                                condition,
+                                context.has_silk_touch,
+                                context.has_shears,
+                                context.fortune_level,
+                                context.params,
+                                rng,
+                            )
+                        })
+                        .map_or((item, final_count), |_| furnace_smelt(item, final_count));
+                    items_to_place.push(ItemStack::new(final_count as u8, item));
                 }
                 break;
             }
@@ -594,5 +702,51 @@ fn shuffle_and_split_items(
     for i in (1..n).rev() {
         let j = rng.next_bounded_i32((i + 1) as i32) as usize;
         result.swap(i, j);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn static_entity_loot_applies_furnace_smelt_modifier() {
+        let table = pumpkin_data::loot_table::get_loot_table("minecraft:entities/cow")
+            .expect("generated cow loot table");
+        let params = LootContextParameters {
+            is_on_fire: Some(true),
+            ..Default::default()
+        };
+
+        let drops = generate_loot_with_context(table, 0, &params);
+
+        assert!(
+            drops
+                .iter()
+                .any(|stack| stack.item.registry_key == "cooked_beef")
+        );
+        assert!(!drops.iter().any(|stack| stack.item.registry_key == "beef"));
+    }
+
+    #[test]
+    fn static_entity_loot_smelt_modifier_checks_fire_aspect_tool() {
+        let table = pumpkin_data::loot_table::get_loot_table("minecraft:entities/cow")
+            .expect("generated cow loot table");
+        let mut tool = ItemStack::new(1, &Item::DIAMOND_SWORD);
+        tool.add_enchantment(&pumpkin_data::Enchantment::FIRE_ASPECT, 1);
+        let params = LootContextParameters {
+            tool: Some(tool),
+            is_on_fire: Some(false),
+            ..Default::default()
+        };
+
+        let drops = generate_loot_with_context(table, 0, &params);
+
+        assert!(
+            drops
+                .iter()
+                .any(|stack| stack.item.registry_key == "cooked_beef")
+        );
+        assert!(!drops.iter().any(|stack| stack.item.registry_key == "beef"));
     }
 }
