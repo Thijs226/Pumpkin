@@ -1067,14 +1067,24 @@ pub fn value_to_configured_feature(v: &Value) -> TokenStream {
     }
 }
 
-/// Converts a block-state-provider JSON object into its `BlockStateProvider` token stream.
+/// Converts an inline or named block-state provider into its `BlockStateProvider` token stream.
 ///
 /// # Arguments
-/// – `v` – the JSON value for the provider, expected to contain a `"type"` field.
+/// – `v` – a registry name, block state, or typed provider object.
 ///
 /// # Returns
 /// A `TokenStream` for the appropriate `BlockStateProvider` variant; defaults to `BlockStateProvider::Simple` with air if the type is unrecognised.
 fn value_to_block_state_provider(v: &Value) -> TokenStream {
+    if let Some(name) = v.as_str() {
+        let name = name.strip_prefix("minecraft:").unwrap_or(name);
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/datapack/data/minecraft/worldgen/block_state_provider")
+            .join(format!("{name}.json"));
+        let content = fs::read_to_string(path).expect("Missing block-state provider reference");
+        let provider: Value =
+            serde_json::from_str(&content).expect("Failed to parse block-state provider JSON");
+        return value_to_block_state_provider(&provider);
+    }
     if v.get("type").is_none() && (v.get("id").is_some() || v.get("Name").is_some()) {
         let state = value_to_block_state(v);
         return quote! { BlockStateProvider::Simple(SimpleStateProvider { state: #state }) };
@@ -1976,5 +1986,53 @@ fn value_to_placement_modifier_cf(v: &Value) -> TokenStream {
             quote! { PlacementModifier::EnvironmentScan(EnvironmentScanPlacementModifier { direction_of_search: #dir, target_condition: #tc, allowed_search_condition: #asc, max_steps: #steps }) }
         }
         _ => quote! { PlacementModifier::Biome(BiomePlacementModifier) },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn named_tree_ground_providers_preserve_replacement_rules() {
+        let providers = [
+            (
+                "minecraft:soil_beneath_tree",
+                json!({
+                    "type": "minecraft:rule_based",
+                    "rules": [{
+                        "if_true": {
+                            "type": "minecraft:not",
+                            "predicate": {
+                                "type": "minecraft:matching_block_tag",
+                                "tag": "minecraft:cannot_replace_below_tree_trunk"
+                            }
+                        },
+                        "then": {"id": "minecraft:dirt"}
+                    }]
+                }),
+            ),
+            (
+                "minecraft:podzol_beneath_tree",
+                json!({
+                    "type": "minecraft:rule_based",
+                    "rules": [{
+                        "if_true": {
+                            "type": "minecraft:matching_block_tag",
+                            "tag": "minecraft:beneath_tree_podzol_replaceable"
+                        },
+                        "then": {"id": "minecraft:podzol", "properties": {"snowy": "false"}}
+                    }]
+                }),
+            ),
+        ];
+        for (name, inline) in providers {
+            assert_eq!(
+                value_to_block_state_provider(&json!(name)).to_string(),
+                value_to_block_state_provider(&inline).to_string(),
+                "named provider {name} must resolve to its replacement rules"
+            );
+        }
     }
 }

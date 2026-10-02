@@ -142,6 +142,73 @@ mod tests {
     }
 
     #[test]
+    fn mega_spruce_ground_decoration_preserves_trunks_and_surrounding_blocks() {
+        use crate::generation::feature::configured_features::{
+            CONFIGURED_FEATURES, ConfiguredFeature,
+        };
+        use crate::generation::proto_chunk::{GenerationCache, ProtoChunk};
+        use pumpkin_data::{Block, configured_feature};
+        use pumpkin_util::math::position::BlockPos;
+        use pumpkin_util::random::{RandomGenerator, legacy_rand::LegacyRand};
+
+        let world_gen = get_world_gen(
+            Seed(0),
+            Dimension::OVERWORLD,
+            false,
+            Vec::new(),
+            String::new(),
+        );
+        for name in [
+            configured_feature::ConfiguredFeature::MegaPine,
+            configured_feature::ConfiguredFeature::MegaSpruce,
+        ] {
+            let mut chunk = ProtoChunk::new(0, 0, &world_gen);
+            for x in 0..16 {
+                for z in 0..16 {
+                    GenerationCache::set_block_state(
+                        &mut chunk,
+                        &BlockPos::new(x, 63, z).0,
+                        Block::DIRT.default_state,
+                    );
+                }
+            }
+            let obstacle = BlockPos::new(5, 66, 5);
+            GenerationCache::set_block_state(&mut chunk, &obstacle.0, Block::STONE.default_state);
+            let ConfiguredFeature::Tree(tree) = &CONFIGURED_FEATURES[&name] else {
+                unreachable!();
+            };
+            let mut random = RandomGenerator::Legacy(LegacyRand::from_seed(0));
+            assert!(tree.generate(
+                &BlockRegistry,
+                &mut chunk,
+                &mut random,
+                BlockPos::new(8, 64, 8)
+            ));
+            for x in 8..=9 {
+                for z in 8..=9 {
+                    assert_eq!(
+                        GenerationCache::get_block_state(&chunk, &BlockPos::new(x, 63, z).0),
+                        Block::PODZOL.default_state.id
+                    );
+                    assert_eq!(
+                        GenerationCache::get_block_state(&chunk, &BlockPos::new(x, 66, z).0)
+                            .to_block_id(),
+                        Block::SPRUCE_LOG.id
+                    );
+                }
+            }
+            assert_eq!(
+                GenerationCache::get_block_state(&chunk, &obstacle.0),
+                Block::STONE.default_state.id
+            );
+            assert_eq!(
+                GenerationCache::get_block_state(&chunk, &BlockPos::new(7, 63, 7).0),
+                Block::PODZOL.default_state.id
+            );
+        }
+    }
+
+    #[test]
     fn dimensions_taller_than_their_noise_settings_generate_all_sections() {
         for (dimension, terrain_state) in [
             (
