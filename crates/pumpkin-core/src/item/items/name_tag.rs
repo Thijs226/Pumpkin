@@ -17,12 +17,19 @@ impl ItemMetadata for NameTagItem {
 
 impl ItemBehaviour for NameTagItem {
     fn use_on_entity(&self, item: &mut ItemStack, player: &Player, entity: Arc<dyn EntityBase>) {
-        let entity = entity.get_entity();
-        if entity.entity_type.saveable
+        let Some(living_entity) = entity.get_living_entity() else {
+            return;
+        };
+        let target = entity.get_entity();
+        if target.entity_type.saveable
             && let Some(name) = item.get_data_component::<CustomNameImpl>()
+            && target.is_alive()
+            && living_entity.health.load() > 0.0
         {
-            // TODO
-            entity.set_custom_name(name.name.clone());
+            target.set_custom_name(name.name.clone());
+            if let Some(mob) = entity.get_mob() {
+                mob.get_mob_entity().set_persistence_required();
+            }
             item.decrement_unless_creative(player.gamemode.load(), 1);
         }
     }

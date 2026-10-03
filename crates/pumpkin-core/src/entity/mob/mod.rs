@@ -223,6 +223,10 @@ impl MobEntity {
         self.set_mob_flag(Self::CAN_PICK_UP_LOOT_FLAG, value);
     }
 
+    pub fn set_persistence_required(&self) {
+        self.persistence_required.store(true, Relaxed);
+    }
+
     pub fn is_left_handed(&self) -> bool {
         (self.mob_flags.load(Relaxed) & Self::LEFT_HANDED_FLAG) != 0
     }
