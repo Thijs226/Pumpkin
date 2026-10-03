@@ -100,6 +100,11 @@ impl SimplexNoiseSampler {
         i32::from(self.permutation[(input & 0xFF) as usize])
     }
 
+    #[inline]
+    fn gradient_index_3d(&self, x: i32, y: i32, z: i32) -> i32 {
+        self.map(x.wrapping_add(self.map(y.wrapping_add(self.map(z))))) % 12
+    }
+
     /// Computes the contribution of a single simplex corner.
     ///
     /// This function applies the simplex noise falloff kernel: (r² - |dist|²)⁴ · gradient.
@@ -230,32 +235,10 @@ impl SimplexNoiseSampler {
         let aj = j & 0xFF;
         let ak = k & 0xFF;
 
-        let al = self.map(ai.wrapping_add(self.map(aj.wrapping_add(self.map(ak))))) % 12;
-        //TODO: extract duplication to a helper method.
-        let am = self.map(
-            ai.wrapping_add(q).wrapping_add(
-                self.map(
-                    aj.wrapping_add(r)
-                        .wrapping_add(self.map(ak.wrapping_add(s))),
-                ),
-            ),
-        ) % 12;
-        let an = self.map(
-            ai.wrapping_add(t).wrapping_add(
-                self.map(
-                    aj.wrapping_add(u)
-                        .wrapping_add(self.map(ak.wrapping_add(v))),
-                ),
-            ),
-        ) % 12;
-        let ao = self.map(
-            ai.wrapping_add(1).wrapping_add(
-                self.map(
-                    aj.wrapping_add(1)
-                        .wrapping_add(self.map(ak.wrapping_add(1))),
-                ),
-            ),
-        ) % 12;
+        let al = self.gradient_index_3d(ai, aj, ak);
+        let am = self.gradient_index_3d(ai.wrapping_add(q), aj.wrapping_add(r), ak.wrapping_add(s));
+        let an = self.gradient_index_3d(ai.wrapping_add(t), aj.wrapping_add(u), ak.wrapping_add(v));
+        let ao = self.gradient_index_3d(ai.wrapping_add(1), aj.wrapping_add(1), ak.wrapping_add(1));
 
         let ap = Self::grad(al as usize, n, o, p, 0.6);
         let aq = Self::grad(am as usize, w, aa, ab, 0.6);
