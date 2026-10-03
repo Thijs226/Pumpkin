@@ -16,7 +16,7 @@ impl Host for PluginHostState {
         locale: WitLocale,
     ) -> wasmtime::Result<()> {
         let util_locale = wit_to_util_locale(locale);
-        add_translation_file(namespace, json, util_locale);
+        add_translation_file(namespace, json, util_locale)?;
         Ok(())
     }
 }
