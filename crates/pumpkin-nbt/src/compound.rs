@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::deserializer::NbtReadHelper;
 use crate::serializer::NbtWriteHelper;
+use crate::snbt::{handle_escape_pretty, quote_and_escape};
 use crate::tag::NbtTag;
 use crate::{END_ID, Error, Nbt};
 use std::collections::hash_map::IntoIter;
@@ -409,7 +410,7 @@ impl Display for NbtCompound {
             if i > 0 {
                 f.write_str(", ")?;
             }
-            write!(f, "{key}: {value}")?;
+            write!(f, "{}: {value}", handle_escape_pretty(key))?;
         }
         f.write_str("}")
     }
@@ -425,7 +426,7 @@ impl Display for NbtTag {
             Self::Long(v) => write!(f, "{v}L"),
             Self::Float(v) => write!(f, "{v}f"),
             Self::Double(v) => write!(f, "{v}d"),
-            Self::String(v) => write!(f, "\"{v}\""), // TODO: Proper escaping needed for robust SNBT
+            Self::String(v) => f.write_str(&quote_and_escape(v)),
             Self::Compound(v) => write!(f, "{v}"),
             Self::ByteArray(v) => {
                 f.write_str("[B;")?;
@@ -474,7 +475,43 @@ impl Display for NbtTag {
 #[cfg(test)]
 mod tests {
     use super::NbtCompound;
+    use crate::tag::NbtTag;
     use uuid::Uuid;
+
+    #[test]
+    fn snbt_strings_escape_like_vanilla() {
+        let cases = [
+            ("", "\"\""),
+            ("plain 🎃", "\"plain 🎃\""),
+            ("say \"hello\"", "'say \"hello\"'"),
+            ("it's \"quoted\"", "\"it's \\\"quoted\\\"\""),
+            ("\"it's quoted\"", "'\"it\\'s quoted\"'"),
+            ("C:\\path\\", "\"C:\\\\path\\\\\""),
+            (
+                "\0\u{7}\u{8}\t\n\u{b}\u{c}\r\u{1b}\u{1f}",
+                "\"\\x00\\x07\\b\\t\\n\\x0B\\f\\r\\x1B\\x1F\"",
+            ),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(NbtTag::String(input.into()).to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn snbt_compound_keys_quote_like_vanilla() {
+        let cases = [
+            ("simple_1.+-", "{simple_1.+-: 1}"),
+            ("", "{\"\": 1}"),
+            ("a b:c", "{\"a b:c\": 1}"),
+            ("a\"b", "{'a\"b': 1}"),
+            ("a\\b\n🎃", "{\"a\\\\b\\n🎃\": 1}"),
+        ];
+        for (key, expected) in cases {
+            let mut compound = NbtCompound::new();
+            compound.put_int(key, 1);
+            assert_eq!(compound.to_string(), expected);
+        }
+    }
 
     #[test]
     fn uuid_int_array_round_trip() {

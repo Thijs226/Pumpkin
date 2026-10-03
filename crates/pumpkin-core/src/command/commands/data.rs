@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use pumpkin_data::translation;
 use pumpkin_nbt::compound::NbtCompound;
+use pumpkin_nbt::snbt::{handle_escape_pretty, quote_and_escape};
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::PermissionLvl;
 use pumpkin_util::math::position::BlockPos;
@@ -131,8 +132,7 @@ pub fn snbt_colorful_display(tag: &NbtTag, _depth: usize) -> TextComponent {
             content.add_child(TextComponent::text("]"))
         }
         NbtTag::String(value) => {
-            let escaped = value.replace('"', "\\\"");
-            TextComponent::text(format!("\"{escaped}\"")).color_named(NamedColor::Green)
+            TextComponent::text(quote_and_escape(value)).color_named(NamedColor::Green)
         }
         NbtTag::List(value) => {
             let mut content = TextComponent::text("[");
@@ -155,7 +155,8 @@ pub fn snbt_colorful_display(tag: &NbtTag, _depth: usize) -> TextComponent {
                 let tag = &value.child_tags[key];
                 content = content
                     .add_child(
-                        TextComponent::text(format!("{key}: ")).color_named(NamedColor::Aqua),
+                        TextComponent::text(format!("{}: ", handle_escape_pretty(key)))
+                            .color_named(NamedColor::Aqua),
                     )
                     .add_child(snbt_colorful_display(tag, 0));
                 if index < value.child_tags.len() - 1 {
