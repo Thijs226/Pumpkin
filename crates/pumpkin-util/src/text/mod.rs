@@ -104,13 +104,12 @@ impl TextComponentBase {
     }
 
     /// Converts this component to an NBT compound tag for a specific Minecraft version.
-    #[expect(clippy::too_many_lines)]
     #[must_use]
     pub fn to_nbt_compound_for_version(
         &self,
         version: &JavaMinecraftVersion,
     ) -> pumpkin_nbt::NbtCompound {
-        let mut compound = pumpkin_nbt::NbtCompound::new();
+        let mut compound = self.style.to_nbt_compound_for_version(version);
         match &*self.content {
             TextContent::Text { text } => {
                 compound.put_string("text", text.to_string());
@@ -170,7 +169,29 @@ impl TextComponentBase {
             }
         }
 
-        if let Some(ref color) = self.style.color {
+        if !self.extra.is_empty() {
+            let list = self
+                .extra
+                .iter()
+                .map(|e| e.to_nbt_tag_for_version(version))
+                .collect();
+            compound.put_list("extra", list);
+        }
+
+        compound
+    }
+}
+
+impl Style {
+    /// Converts this style to an NBT compound for the requested Minecraft version.
+    #[expect(clippy::too_many_lines)]
+    #[must_use]
+    pub fn to_nbt_compound_for_version(
+        &self,
+        version: &JavaMinecraftVersion,
+    ) -> pumpkin_nbt::NbtCompound {
+        let mut compound = pumpkin_nbt::NbtCompound::new();
+        if let Some(ref color) = self.color {
             let color_str = match color {
                 Color::Reset => Some("reset".to_string()),
                 Color::Named(c) => Some(c.name().to_string()),
@@ -187,35 +208,35 @@ impl TextComponentBase {
             }
         }
 
-        if let Some(bold) = self.style.bold {
+        if let Some(bold) = self.bold {
             compound.put_byte("bold", i8::from(bold));
         }
-        if let Some(italic) = self.style.italic {
+        if let Some(italic) = self.italic {
             compound.put_byte("italic", i8::from(italic));
         }
-        if let Some(underlined) = self.style.underlined {
+        if let Some(underlined) = self.underlined {
             compound.put_byte("underlined", i8::from(underlined));
         }
-        if let Some(strikethrough) = self.style.strikethrough {
+        if let Some(strikethrough) = self.strikethrough {
             compound.put_byte("strikethrough", i8::from(strikethrough));
         }
-        if let Some(obfuscated) = self.style.obfuscated {
+        if let Some(obfuscated) = self.obfuscated {
             compound.put_byte("obfuscated", i8::from(obfuscated));
         }
-        if let Some(ref insertion) = self.style.insertion {
+        if let Some(ref insertion) = self.insertion {
             compound.put_string("insertion", insertion.clone());
         }
-        if let Some(ref font) = self.style.font {
+        if let Some(ref font) = self.font {
             compound.put_string("font", font.clone());
         }
 
         if *version >= JavaMinecraftVersion::V_1_21_4
-            && let Some(ref shadow) = self.style.shadow_color
+            && let Some(ref shadow) = self.shadow_color
         {
             compound.put_int("shadow_color", shadow.to_argb_int());
         }
 
-        if let Some(ref click) = self.style.click_event {
+        if let Some(ref click) = self.click_event {
             let mut click_tag = pumpkin_nbt::NbtCompound::new();
             match click {
                 ClickEvent::OpenUrl { url } => {
@@ -273,7 +294,7 @@ impl TextComponentBase {
             compound.put_compound(click_key, click_tag);
         }
 
-        if let Some(ref hover) = self.style.hover_event {
+        if let Some(ref hover) = self.hover_event {
             let mut hover_tag = pumpkin_nbt::NbtCompound::new();
             if *version >= JavaMinecraftVersion::V_1_21_5 {
                 match hover {
@@ -397,18 +418,11 @@ impl TextComponentBase {
             compound.put_compound(hover_key, hover_tag);
         }
 
-        if !self.extra.is_empty() {
-            let list = self
-                .extra
-                .iter()
-                .map(|e| e.to_nbt_tag_for_version(version))
-                .collect();
-            compound.put_list("extra", list);
-        }
-
         compound
     }
+}
 
+impl TextComponentBase {
     /// Converts this component to an `NbtTag` for the specified Minecraft version.
     ///
     /// For versions >= 1.20.3, a compact representation is used when possible (plain string tag).

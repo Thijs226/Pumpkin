@@ -74,6 +74,12 @@ pub fn pack_degrees(degrees: f32) -> u8 {
     (degrees * 256.0 / 360.0).floor() as i32 as u8
 }
 
+/// Vanilla `Mth.unpackDegrees`.
+#[must_use]
+pub const fn unpack_degrees(packed: u8) -> f32 {
+    (packed as i8 as f32) * 360.0 / 256.0
+}
+
 #[must_use]
 pub fn wrap_degrees_90(angle: f32) -> f32 {
     let mut normalized_angle = angle % 90.0;

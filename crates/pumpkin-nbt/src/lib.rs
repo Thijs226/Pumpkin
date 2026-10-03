@@ -28,6 +28,8 @@ pub mod nbt_compress;
 pub mod nbt_ops;
 /// Low-level NBT serialization support.
 pub mod serializer;
+/// SNBT string and compound-key escaping.
+pub mod snbt;
 /// The individual NBT tag types.
 pub mod tag;
 

@@ -223,6 +223,10 @@ impl MobEntity {
         self.set_mob_flag(Self::CAN_PICK_UP_LOOT_FLAG, value);
     }
 
+    pub fn set_persistence_required(&self) {
+        self.persistence_required.store(true, Relaxed);
+    }
+
     pub fn is_left_handed(&self) -> bool {
         (self.mob_flags.load(Relaxed) & Self::LEFT_HANDED_FLAG) != 0
     }
@@ -836,6 +840,10 @@ pub trait Mob: EntityBase + Send + Sync {
         false
     }
 
+    fn is_ignoring_block_triggers(&self) -> bool {
+        false
+    }
+
     /// Whether daylight burns this mob. Default: entity tag `burn_in_daylight`.
     fn burns_in_daylight(&self) -> bool {
         self.get_entity()
@@ -1335,6 +1343,10 @@ pub trait Mob: EntityBase + Send + Sync {
 impl<T: Mob + Send + 'static> EntityBase for T {
     fn get_mob(&self) -> Option<&dyn Mob> {
         Some(self)
+    }
+
+    fn is_ignoring_block_triggers(&self) -> bool {
+        Mob::is_ignoring_block_triggers(self)
     }
 
     fn is_pushable(&self) -> bool {

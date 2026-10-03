@@ -87,14 +87,16 @@ pub fn add_translation<P: Into<String>>(namespace: P, key: P, translation: P, lo
 ///
 /// # Arguments
 /// * `namespace`: The namespace applied to all loaded keys.
-/// * `file_path`: A JSON string containing a flat key-value translation map.
+/// * `json`: A JSON string containing a flat key-value translation map.
 /// * `locale`: The locale the translations belong to.
-pub fn add_translation_file<P: Into<String>>(namespace: P, file_path: P, locale: Locale) {
-    let translations_map: HashMap<String, String> =
-        serde_json::from_str(&file_path.into()).unwrap_or_default();
+pub fn add_translation_file<P: Into<String>>(
+    namespace: P,
+    json: P,
+    locale: Locale,
+) -> Result<(), serde_json::Error> {
+    let translations_map: HashMap<String, String> = serde_json::from_str(&json.into())?;
     if translations_map.is_empty() {
-        // TODO: Handle the case where the file is empty or not found properly
-        return;
+        return Ok(());
     }
 
     let mut translations = TRANSLATIONS
@@ -105,6 +107,7 @@ pub fn add_translation_file<P: Into<String>>(namespace: P, file_path: P, locale:
         let namespaced_key = format!("{namespace}:{key}").to_lowercase();
         translations[locale as usize].insert(namespaced_key, translation);
     }
+    Ok(())
 }
 
 /// Retrieves a translation for the given key and locale.
@@ -814,12 +817,36 @@ mod tests {
             "minecraft",
             r#"{"commands.seed.success":"Loaded seed: %s"}"#,
             Locale::EnUs,
-        );
+        )
+        .unwrap();
         let file_override = message().to_pretty_console();
         add_translation("minecraft", key, original.as_str(), Locale::EnUs);
 
         assert_eq!(single_override, "Custom seed: 42");
         assert_eq!(file_override, "Loaded seed: 42");
+    }
+
+    #[test]
+    fn malformed_translation_json_does_not_replace_entries() {
+        add_translation("json-error-test", "message", "Original", Locale::EnUs);
+        for json in [
+            "",
+            " \n ",
+            "not-json",
+            r#"{"message":"Changed","other":7}"#,
+            "[]",
+        ] {
+            assert!(add_translation_file("json-error-test", json, Locale::EnUs).is_err());
+            assert_eq!(
+                get_translation("json-error-test:message", Locale::EnUs),
+                "Original"
+            );
+        }
+        add_translation_file("json-error-test", "{}", Locale::EnUs).unwrap();
+        assert_eq!(
+            get_translation("json-error-test:message", Locale::EnUs),
+            "Original"
+        );
     }
 
     fn arg(text: &str) -> TextComponentBase {

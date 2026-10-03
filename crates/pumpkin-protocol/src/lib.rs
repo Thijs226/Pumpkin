@@ -414,17 +414,26 @@ pub enum NumberFormat {
 
 impl NumberFormat {
     pub fn write(&self, write: &mut impl ser::NetworkWriteExt) -> Result<(), ser::WritingError> {
+        self.write_for_version(write, &pumpkin_data::packet::CURRENT_MC_VERSION)
+    }
+
+    /// Writes the number format and its payload for the requested protocol version.
+    pub fn write_for_version(
+        &self,
+        write: &mut impl ser::NetworkWriteExt,
+        version: &JavaMinecraftVersion,
+    ) -> Result<(), ser::WritingError> {
         match self {
             Self::Blank => write.write_var_int(&0.into()),
-            Self::Styled(_style) => {
+            Self::Styled(style) => {
                 write.write_var_int(&1.into())?;
-                // TODO: Style write
-                Ok(())
+                let bytes = pumpkin_nbt::Nbt::from(style.to_nbt_compound_for_version(version))
+                    .write_unnamed();
+                write.write_slice(&bytes)
             }
             Self::Fixed(text) => {
                 write.write_var_int(&2.into())?;
-                write.write_slice(&text.encode())?;
-                Ok(())
+                write.write_component(text, version)
             }
         }
     }

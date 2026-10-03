@@ -260,6 +260,23 @@ fn quoted_string_literals() {
 }
 
 #[test]
+fn displayed_strings_and_keys_round_trip() {
+    let mut compound = NbtCompound::new();
+    compound.put_string("a b:c", "both \"quotes\" and 'apostrophes'".to_string());
+    compound.put_string(
+        "a\\b\n🎃",
+        "\0\u{7}\u{8}\t\n\u{b}\u{c}\r\u{1b}\u{1f}🎃".to_string(),
+    );
+    compound.put(
+        "nested",
+        NbtTag::List(vec![NbtTag::String("C:\\path\\".into())]),
+    );
+    let tag = NbtTag::Compound(compound);
+    let snbt = tag.to_string();
+    assert_parse_ok!(&snbt, tag);
+}
+
+#[test]
 fn unquoted_string_literals() {
     assert_parse_ok!("abc", NbtTag::String("abc".into()));
     assert_parse_ok!(

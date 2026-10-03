@@ -70,7 +70,7 @@ impl ClientPacket for CUpdateScore {
             write.write_string(&self.objective_name)?;
             write.write_var_int(&self.value)?;
             write.write_option(&self.display_name, |w, t| w.write_component(t, version))?;
-            write.write_option(&self.number_format, |w, n| n.write(w))
+            write.write_option(&self.number_format, |w, n| n.write_for_version(w, version))
         } else if *version <= pumpkin_util::version::JavaMinecraftVersion::V_1_7_6 {
             write.write_u8(0)?;
             write.write_string(&self.objective_name)?;
@@ -86,7 +86,57 @@ impl ClientPacket for CUpdateScore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pumpkin_nbt::deserializer::NbtReadHelperJava;
+    use pumpkin_util::text::style::Style;
     use pumpkin_util::version::JavaMinecraftVersion;
+    use std::io::Cursor;
+
+    #[test]
+    fn styled_score_writes_style_payload() -> Result<(), Box<dyn std::error::Error>> {
+        let style = Style {
+            bold: Some(true),
+            italic: Some(false),
+            ..Style::default()
+        };
+        let packet = CUpdateScore::new(
+            "A".into(),
+            "b".into(),
+            VarInt(7),
+            None,
+            Some(NumberFormat::Styled(style)),
+        );
+        let mut bytes = Vec::new();
+        packet.write_packet_data(&mut bytes, &JavaMinecraftVersion::V_26_3)?;
+        assert_eq!(&bytes[..8], [1, b'A', 1, b'b', 7, 0, 1, 1]);
+        let mut payload = Cursor::new(&bytes[8..]);
+        let actual = pumpkin_nbt::Nbt::read_unnamed(&mut NbtReadHelperJava::new(&mut payload))?;
+        let mut expected_bytes = Cursor::new(
+            &[
+                10, 1, 0, 4, b'b', b'o', b'l', b'd', 1, 1, 0, 6, b'i', b't', b'a', b'l', b'i',
+                b'c', 0, 0,
+            ][..],
+        );
+        let expected =
+            pumpkin_nbt::Nbt::read_unnamed(&mut NbtReadHelperJava::new(&mut expected_bytes))?;
+        assert_eq!(actual.root_tag, expected.root_tag);
+        assert_eq!(payload.position() as usize, bytes.len() - 8);
+        Ok(())
+    }
+
+    #[test]
+    fn empty_styled_score_writes_empty_compound() -> Result<(), WritingError> {
+        let packet = CUpdateScore::new(
+            "A".into(),
+            "b".into(),
+            VarInt(7),
+            None,
+            Some(NumberFormat::Styled(Style::default())),
+        );
+        let mut bytes = Vec::new();
+        packet.write_packet_data(&mut bytes, &JavaMinecraftVersion::V_26_3)?;
+        assert_eq!(bytes, [1, b'A', 1, b'b', 7, 0, 1, 1, 10, 0]);
+        Ok(())
+    }
 
     #[test]
     fn update_score_serialization() {
