@@ -689,6 +689,10 @@ impl BlockDisplayEntity {
 }
 
 impl EntityBase for BlockDisplayEntity {
+    fn is_ignoring_block_triggers(&self) -> bool {
+        true
+    }
+
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         self.display.write_display_nbt(nbt);
         nbt.put_int("block_state", self.block_state.load(Ordering::Relaxed));
@@ -798,6 +802,10 @@ impl ItemDisplayEntity {
 }
 
 impl EntityBase for ItemDisplayEntity {
+    fn is_ignoring_block_triggers(&self) -> bool {
+        true
+    }
+
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         self.display.write_display_nbt(nbt);
         let display_mode_str = match self.item_display.load(Ordering::Relaxed) {
@@ -1047,6 +1055,10 @@ impl TextDisplayEntity {
 }
 
 impl EntityBase for TextDisplayEntity {
+    fn is_ignoring_block_triggers(&self) -> bool {
+        true
+    }
+
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         self.display.write_display_nbt(nbt);
         let text_json_res = pumpkin_util::serde_json::to_string(

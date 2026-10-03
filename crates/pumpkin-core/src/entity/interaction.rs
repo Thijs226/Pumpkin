@@ -143,6 +143,10 @@ impl InteractionEntity {
 }
 
 impl EntityBase for InteractionEntity {
+    fn is_ignoring_block_triggers(&self) -> bool {
+        true
+    }
+
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         nbt.put_float(
             "width",

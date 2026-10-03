@@ -25,6 +25,10 @@ impl MarkerEntity {
 }
 
 impl EntityBase for MarkerEntity {
+    fn is_ignoring_block_triggers(&self) -> bool {
+        true
+    }
+
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         let data = self
             .data

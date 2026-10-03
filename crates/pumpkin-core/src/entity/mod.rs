@@ -342,6 +342,10 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         false
     }
 
+    fn is_ignoring_block_triggers(&self) -> bool {
+        false
+    }
+
     fn is_collidable(&self, _entity: Option<Box<dyn EntityBase>>) -> bool {
         false
     }
@@ -4128,6 +4132,11 @@ impl Entity {
 }
 
 impl EntityBase for Entity {
+    fn is_ignoring_block_triggers(&self) -> bool {
+        // Ominous item spawners currently use this fallback entity implementation.
+        self.entity_type == &EntityType::OMINOUS_ITEM_SPAWNER
+    }
+
     fn tick(&self, caller: &dyn EntityBase, _server: &Server) {
         // Recomputed during movement/block-collision handling in the same tick.
         let was_in_powder_snow = self.is_in_powder_snow.load(Ordering::Relaxed);

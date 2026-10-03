@@ -230,6 +230,10 @@ impl ArmorStandEntity {
 }
 
 impl EntityBase for ArmorStandEntity {
+    fn is_ignoring_block_triggers(&self) -> bool {
+        self.is_marker()
+    }
+
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         let disabled_slots = self.disabled_slots.load(Ordering::Relaxed);
         // ...

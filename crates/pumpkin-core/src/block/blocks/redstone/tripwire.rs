@@ -24,6 +24,9 @@ pub struct TripwireBlock;
 
 impl BlockBehaviour for TripwireBlock {
     fn on_entity_collision(&self, args: OnEntityCollisionArgs<'_>) {
+        if args.entity.is_spectator() || args.entity.is_ignoring_block_triggers() {
+            return;
+        }
         let mut props = TripwireProperties::from_state_id(args.state.id);
         if props.powered {
             return;
@@ -113,18 +116,20 @@ impl BlockBehaviour for TripwireBlock {
         }
 
         let aabb = BoundingBox::from_block(args.position);
-        // TODO entity.canAvoidTraps()
-        if args.world.get_entities_at_box(&aabb).is_empty()
-            && args.world.get_players_at_box(&aabb).is_empty()
-        {
+        let should_be_pressed = args
+            .world
+            .get_all_at_box(&aabb)
+            .iter()
+            .any(|entity| !entity.is_spectator() && !entity.is_ignoring_block_triggers());
+        if should_be_pressed {
+            args.world
+                .schedule_block_tick(args.block, *args.position, 10, TickPriority::Normal);
+        } else {
             props.powered = false;
             let state_id = props.to_state_id(args.block);
             args.world
                 .set_block_state(args.position, state_id, BlockFlags::NOTIFY_ALL);
             Self::update(args.world, args.position, state_id);
-        } else {
-            args.world
-                .schedule_block_tick(args.block, *args.position, 10, TickPriority::Normal);
         }
     }
 
