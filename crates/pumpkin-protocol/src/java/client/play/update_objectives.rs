@@ -58,20 +58,7 @@ impl ClientPacket for CUpdateObjectives {
                 write.write_var_int(&self.render_type)?;
                 if *version >= JavaMinecraftVersion::V_1_20_3 {
                     write.write_option(&self.number_format, |p, v| {
-                        match v {
-                            NumberFormat::Blank => p.write_var_int(&VarInt(0)),
-                            NumberFormat::Styled(_style) => {
-                                p.write_var_int(&VarInt(1))?;
-                                let comp = pumpkin_nbt::compound::NbtCompound::new();
-                                // Write style properties if any
-                                let bytes = pumpkin_nbt::Nbt::from(comp).write_unnamed();
-                                p.write_all(&bytes).map_err(WritingError::IoError)
-                            }
-                            NumberFormat::Fixed(text_component) => {
-                                p.write_var_int(&VarInt(2))?;
-                                p.write_component(text_component, version)
-                            }
-                        }
+                        v.write_for_version(p, version)
                     })?;
                 }
             }
@@ -90,4 +77,44 @@ pub enum Mode {
 pub enum RenderType {
     Integer,
     Hearts,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pumpkin_nbt::deserializer::NbtReadHelperJava;
+    use pumpkin_util::text::style::Style;
+    use std::io::Cursor;
+
+    #[test]
+    fn styled_objective_preserves_explicit_decorations() -> Result<(), Box<dyn std::error::Error>> {
+        let style = Style {
+            bold: Some(true),
+            italic: Some(false),
+            ..Style::default()
+        };
+        let packet = CUpdateObjectives::new(
+            "b".into(),
+            Mode::Add,
+            TextComponent::text("T"),
+            RenderType::Integer,
+            Some(NumberFormat::Styled(style)),
+        );
+        let mut bytes = Vec::new();
+        packet.write_packet_data(&mut bytes, &JavaMinecraftVersion::V_26_3)?;
+        assert_eq!(&bytes[..10], [1, b'b', 0, 8, 0, 1, b'T', 0, 1, 1]);
+        let mut payload = Cursor::new(&bytes[10..]);
+        let actual = pumpkin_nbt::Nbt::read_unnamed(&mut NbtReadHelperJava::new(&mut payload))?;
+        let mut expected_bytes = Cursor::new(
+            &[
+                10, 1, 0, 4, b'b', b'o', b'l', b'd', 1, 1, 0, 6, b'i', b't', b'a', b'l', b'i',
+                b'c', 0, 0,
+            ][..],
+        );
+        let expected =
+            pumpkin_nbt::Nbt::read_unnamed(&mut NbtReadHelperJava::new(&mut expected_bytes))?;
+        assert_eq!(actual.root_tag, expected.root_tag);
+        assert_eq!(payload.position() as usize, bytes.len() - 10);
+        Ok(())
+    }
 }
