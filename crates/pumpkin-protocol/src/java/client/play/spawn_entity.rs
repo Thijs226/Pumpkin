@@ -4,7 +4,7 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::packet::clientbound::play::ADD_ENTITY;
 use pumpkin_macros::java_packet;
 use pumpkin_util::{
-    math::{pack_degrees, vector3::Vector3},
+    math::{pack_degrees, unpack_degrees, vector3::Vector3},
     version::JavaMinecraftVersion,
 };
 
@@ -14,8 +14,6 @@ use crate::{
     ser::{NetworkReadExt, NetworkWriteExt, ReadingError, WritingError},
 };
 
-// TODO: `unpack_degrees` helper next to `pumpkin_util::math::pack_degrees`.
-const ROTATION_FACTOR: f32 = 256.0 / 360.0;
 const VELOCITY_FACTOR: f64 = 8000.0;
 
 #[java_packet(ADD_ENTITY)]
@@ -86,18 +84,18 @@ impl CSpawnEntity {
     }
 
     #[must_use]
-    pub fn pitch_degrees(&self) -> f32 {
-        (self.pitch as i8 as f32) / ROTATION_FACTOR
+    pub const fn pitch_degrees(&self) -> f32 {
+        unpack_degrees(self.pitch)
     }
 
     #[must_use]
-    pub fn yaw_degrees(&self) -> f32 {
-        (self.yaw as i8 as f32) / ROTATION_FACTOR
+    pub const fn yaw_degrees(&self) -> f32 {
+        unpack_degrees(self.yaw)
     }
 
     #[must_use]
-    pub fn head_yaw_degrees(&self) -> f32 {
-        (self.head_yaw as i8 as f32) / ROTATION_FACTOR
+    pub const fn head_yaw_degrees(&self) -> f32 {
+        unpack_degrees(self.head_yaw)
     }
 
     pub fn read_packet_data(
